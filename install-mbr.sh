@@ -128,9 +128,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
     btop
 
     (writeShellScriptBin "createKeys" ''
-        sudo -i
-        
-        tee /root/.ssh/config <<EOF
+        sudo tee /root/.ssh/config <<EOF
           Host github.com
           HostName github.com
           User git
@@ -140,11 +138,11 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         EOF
 
         echo "Creating GitHub deploy key..." &&
-          ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
+          sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
               
         echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
         echo ""
-          cat /root/.ssh/github_deploy_key.pub
+          sudo cat /root/.ssh/github_deploy_key.pub
         echo ""
 
         echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
@@ -160,7 +158,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         echo "Actualización completada."
         echo "Reiniciando sistema..."
               
-          sleep 5
+        sleep 5
         sudo reboot
         exit 0
     '')
