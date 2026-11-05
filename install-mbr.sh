@@ -128,7 +128,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
     btop
 
     (writeShellScriptBin "createKeys" ''
-        sudo tee /root/.ssh/config <<EOF
+        tee /root/.ssh/config > /dev/null <<EOF
           Host github.com
           HostName github.com
           User git
@@ -138,11 +138,11 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         EOF
 
         echo "Creating GitHub deploy key..." &&
-          sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
+          ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
               
         echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
         echo ""
-          sudo cat /root/.ssh/github_deploy_key.pub
+          cat /root/.ssh/github_deploy_key.pub
         echo ""
 
         echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
@@ -152,7 +152,16 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
 
         echo "Repositorio se guardó correctamente."
         echo "Ejecutando actualización..."
-        update
+        
+        bash -c '
+          repo_file="/root/.github_repo_url"
+          repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
+          echo "Actualizando con repo: $repo_url"
+          sudo nixos-generate-config && \
+          sudo nixos-rebuild switch --flake "git+ssh://$repo_url#nixos" \
+            --refresh --impure --no-write-lock-file \
+              -I hardware=/etc/nixos/hardware-configuration.nix
+        '
               
         echo ""
         echo "Actualización completada."
@@ -171,22 +180,12 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
              update = ''
                 bash -c '
                   repo_file="/root/.github_repo_url"
-                  if [ -f "$repo_file" ]; then
-                    repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
-                    if [ -n "$repo_url" ]; then
-                      echo "Actualizando con repo: $repo_url"
-                      sudo nixos-generate-config && \
-                      sudo nixos-rebuild switch --flake "git+ssh://$repo_url#nixos" \
-                        --refresh --impure --no-write-lock-file \
-                        -I hardware=/etc/nixos/hardware-configuration.nix
-                    else
-                      echo "Error: $repo_file está vacío" >&2
-                      exit 1
-                    fi
-                  else
-                    echo "Error: No existe $repo_file" >&2
-                    exit 1
-                  fi
+                  repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
+                  echo "Actualizando con repo: $repo_url"
+                  sudo nixos-generate-config && \
+                  sudo nixos-rebuild switch --flake "git+ssh://$repo_url#nixos" \
+                    --refresh --impure --no-write-lock-file \
+                    -I hardware=/etc/nixos/hardware-configuration.nix
                 '
               '';
             logs = "cd /var/log";
