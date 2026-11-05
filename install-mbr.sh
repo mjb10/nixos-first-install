@@ -254,12 +254,19 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
 }
 EOF
 
+# setting password for user 'root'
+echo "Now set new password for user 'root'"
+echo "Type new password: "
+read -s passwordRoot
+
 # Installation of NixOS
-nixos-install
+echo "$passwordRoot" | nixos-install
 
 # Setting password for Nixi
 echo "Now set new password for user 'nixi'"
-nixos-enter --root /mnt -c 'passwd nixi'
+echo "Type new password: "
+read -s password
+echo "$password" | nixos-enter --root /mnt -c 'passwd nixi'
 
 echo "Everything's done!"
 echo "Now shutting down the system..."
