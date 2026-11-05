@@ -147,7 +147,7 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
               echo ""
               echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
               read repoUrl
-              
+
               tee /root/.github_repo_url <<EOF
                 $repoUrl
               EOF
@@ -165,7 +165,7 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
                   if [ -f "$repo_file" ]; then
                     repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
                     if [ -n "$repo_url" ]; then
-                      echo "Usando repo dinámico: $repo_url"
+                      echo "Actualizando con repo: $repo_url"
                       nixos-generate-config && \
                       nixos-rebuild switch --flake "git+ssh://${repo_url}#nixos" \
                         --refresh --impure --no-write-lock-file \
