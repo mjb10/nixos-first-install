@@ -131,37 +131,39 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
         sudo -i
         
         tee /root/.ssh/config <<EOF
-                  Host github.com
-                  HostName github.com
-                  User git
-                  IdentityFile /root/.ssh/github_deploy_key
-                  IdentitiesOnly yes
-                  StrictHostKeyChecking accept-new
-                EOF
+          Host github.com
+          HostName github.com
+          User git
+          IdentityFile /root/.ssh/github_deploy_key
+          IdentitiesOnly yes
+          StrictHostKeyChecking accept-new
+        EOF
 
-              echo "Creating GitHub deploy key..." &&
-                ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
-              echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
-              echo ""
-                cat /root/.ssh/github_deploy_key.pub
-              echo ""
-              echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
-              read repoUrl
+        echo "Creating GitHub deploy key..." &&
+          ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
+              
+        echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
+        echo ""
+          cat /root/.ssh/github_deploy_key.pub
+        echo ""
 
-              tee /root/.github_repo_url <<EOF
-                $repoUrl
-              EOF
+        echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
+          read repoUrl
 
-              echo "Repositorio se guardó correctamente."
-              echo "Ejecutando actualización..."
-              update
-              echo ""
-              echo "Actualización completada."
-              echo "Reiniciando sistema..."
-              sleep 5
-              sudo reboot
-          exit 0
-      '')
+        echo "$repoUrl" > /root/.github_repo_url
+
+        echo "Repositorio se guardó correctamente."
+        echo "Ejecutando actualización..."
+        update
+              
+        echo ""
+        echo "Actualización completada."
+        echo "Reiniciando sistema..."
+              
+          sleep 5
+        sudo reboot
+        exit 0
+    '')
   ];
 
   environment = {
