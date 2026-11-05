@@ -61,7 +61,7 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
         max-jobs = "auto"; # "auto"
         substituters = [
             "https://cache.nixos.org"
-            #"https://nix-community.cachix.org"  # si usas paquetes community
+            "https://nix-community.cachix.org"  # si usas paquetes community
         ];
     };
 
