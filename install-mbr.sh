@@ -126,7 +126,61 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
     # - System utilities
     git
     btop
+
+    (writeShellScriptBin "createKeys" ''
+        sudo -i
+        tee /root/.ssh/config <<EOF
+                  Host github.com
+                  HostName github.com
+                  User git
+                  IdentityFile /root/.ssh/github_deploy_key
+                  IdentitiesOnly yes
+                  StrictHostKeyChecking accept-new
+                EOF
+              echo "Creating GitHub deploy key..." &&
+                ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key 
+              echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
+              echo ""
+                cat /root/.ssh/github_deploy_key.pub
+              echo ""
+              echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
+              read repoUrl
+              tee /root/.github_repo_url <<EOF
+                $repoUrl
+              EOF
+      '')
   ];
+
+  environment = {
+        # Aliases de shell disponibles en todos los usuarios (interactive shells)
+        shellAliases = {
+            #update = "nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server --refresh --impure --no-write-lock-file";
+            #update = "nixos-generate-config && nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server#nixos --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix";
+             update = ''
+                bash -c '
+                  repo_file="/root/.github_repo_url"
+                  if [ -f "$repo_file" ]; then
+                    repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
+                    if [ -n "$repo_url" ]; then
+                      echo "Usando repo dinámico: $repo_url"
+                      nixos-generate-config && \
+                      nixos-rebuild switch --flake "git+ssh://${repo_url}#nixos" \
+                        --refresh --impure --no-write-lock-file \
+                        -I hardware=/etc/nixos/hardware-configuration.nix
+                    else
+                      echo "Error: $repo_file está vacío" >&2
+                      exit 1
+                    fi
+                  else
+                    echo "Error: No existe $repo_file" >&2
+                    exit 1
+                  fi
+                '
+              '';
+            logs = "cd /var/log";
+            disco = "df -h";
+        };
+  };
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
