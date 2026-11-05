@@ -157,6 +157,9 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
               update
               echo ""
               echo "Actualización completada."
+              echo "Reiniciando sistema..."
+              sleep 5
+              sudo reboot
           exit 0
       '')
   ];
