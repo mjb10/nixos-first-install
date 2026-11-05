@@ -258,7 +258,11 @@ EOF
 echo ""
 echo "Now set new password for user 'root'"
 read -rp "Type new password: " passwordRoot < /dev/tty
+echo "Password for root set!"
 
+echo ""
+echo "Installing NixOS..."
+echo ""
 # Installation of NixOS
 echo "$passwordRoot" | nixos-install
 
@@ -266,7 +270,8 @@ echo "$passwordRoot" | nixos-install
 echo ""
 echo "Now set new password for user 'nixi'"
 read -rp "Type new password: " password < /dev/tty
-echo "$password" | nixos-enter --root /mnt -c 'passwd nixi'
+nixos-enter --root /mnt
+echo "$password" | passwd nixi
 echo ""
 
 echo "Everything's done!"
