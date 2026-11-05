@@ -259,6 +259,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
 EOF
 
 # setting password for user 'root'
+echo ""
 echo "Now set new password for user 'root'"
 echo "Type new password: "
 read -s passwordRoot
