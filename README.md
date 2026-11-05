@@ -1,0 +1,1 @@
+# nixos-first-install
