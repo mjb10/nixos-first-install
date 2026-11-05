@@ -143,23 +143,25 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
 
               echo "Creating GitHub deploy key..." &&
                 ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
+              
               echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
               echo ""
                 cat /root/.ssh/github_deploy_key.pub
               echo ""
+
               echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
               read repoUrl
 
-              tee /root/.github_repo_url <<EOF
-                $repoUrl
-              EOF
+              echo "$repoUrl" > /root/.github_repo_url
 
               echo "Repositorio se guardó correctamente."
               echo "Ejecutando actualización..."
               update
+              
               echo ""
               echo "Actualización completada."
               echo "Reiniciando sistema..."
+              
               sleep 5
               sudo reboot
           exit 0
