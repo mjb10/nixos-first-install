@@ -153,7 +153,10 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
               EOF
 
               echo "Repositorio se guardó correctamente."
-              echo "Ahora mismo ejecutá el comando 'update' para aplicar los cambios."
+              echo "Ejecutando actualización..."
+              update
+              echo ""
+              echo "Actualización completada."
           exit 0
       '')
   ];
@@ -161,8 +164,7 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
   environment = {
         # Aliases de shell disponibles en todos los usuarios (interactive shells)
         shellAliases = {
-            #update = "nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server --refresh --impure --no-write-lock-file";
-            #update = "nixos-generate-config && nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server#nixos --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix";
+            #update = "sudo nixos-generate-config && sudo nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server#nixos --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix";
              update = ''
                 bash -c '
                   repo_file="/root/.github_repo_url"
@@ -170,8 +172,8 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
                     repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
                     if [ -n "$repo_url" ]; then
                       echo "Actualizando con repo: $repo_url"
-                      nixos-generate-config && \
-                      nixos-rebuild switch --flake "git+ssh://${repo_url}#nixos" \
+                      sudo nixos-generate-config && \
+                      sudo nixos-rebuild switch --flake "git+ssh://${repo_url}#nixos" \
                         --refresh --impure --no-write-lock-file \
                         -I hardware=/etc/nixos/hardware-configuration.nix
                     else
@@ -186,6 +188,9 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
               '';
             logs = "cd /var/log";
             disco = "df -h";
+            createDeployKeys = "createKeys";
+            connectRepo = "createKeys";
+            connect-repo = "createKeys";
         };
   };
 
