@@ -270,8 +270,9 @@ echo "$passwordRoot" | nixos-install
 echo ""
 echo "Now set new password for user 'nixi'"
 read -rp "Type new password: " password < /dev/tty
-nixos-enter --root /mnt
-echo "$password" | passwd nixi
+#nixos-enter --root /mnt
+#echo "$password" | passwd nixi
+echo "nixi:$password" | chpasswd -R /mnt
 echo ""
 
 echo "Everything's done!"
