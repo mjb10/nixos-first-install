@@ -277,6 +277,7 @@ read -rp "Type new password: " password < /dev/tty
 nixos-enter --root /mnt
 echo "$password" | passwd nixi
 echo ""
+
 echo "Everything's done!"
 echo "Now shutting down the system..."
 echo "Don't forget to remove the installation media and then boot the system!"
