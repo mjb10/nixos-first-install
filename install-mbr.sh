@@ -27,12 +27,11 @@ swapon /dev/vda2
 nixos-generate-config --root /mnt
 
 # Configuration startup
-# > /root/.github_repo_url
-echo "
+tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
 
 # Edit this configuration file to define what should be installed on
 # your system. Help is available in the configuration.nix(5) man page, on
-# https://search.nixos.org/options and in the NixOS manual ('nixos-help').
+# https://search.nixos.org/options and in the NixOS manual (`nixos-help`).
 
 { config, lib, pkgs, ... }:
 
@@ -253,16 +252,14 @@ echo "
   # For more information, see `man configuration.nix` or https://nixos.org/manual/nixos/stable/options#opt-system.stateVersion .
   system.stateVersion = "26.11"; # Did you read the comment?
 }
-" > /mnt/etc/nixos/configuration.nix
+EOF
 
 # Installation of NixOS
 nixos-install
 
 # Setting password for Nixi
 echo "Now set new password for user 'nixi'"
-echo "Type new password: "
-read -s password
-echo "$password" | nixos-enter --root /mnt -c 'passwd nixi'
+nixos-enter --root /mnt -c 'passwd nixi'
 
 echo "Everything's done!"
 echo "Now shutting down the system..."
