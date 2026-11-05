@@ -1,5 +1,5 @@
 # nixos-first-install
-Primera instalación de NixOS para servers VPS
+Primera instalación de NixOS para servers VPS. Probado en servers Upcloud.
 
 ### Comandos:
 #### Comando CURL para discos GPT (UEFI): 
