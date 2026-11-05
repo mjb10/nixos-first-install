@@ -151,6 +151,10 @@ tee /mnt/etc/nixos/configuration.nix << 'EOF'
               tee /root/.github_repo_url <<EOF
                 $repoUrl
               EOF
+
+              echo "Repositorio se guardó correctamente."
+              echo "Ahora mismo ejecutá el comando 'update' para aplicar los cambios."
+          exit 0
       '')
   ];
 
