@@ -65,11 +65,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
     };
 
   networking.hostName = "nixos"; # Define your hostname.
-
-  # Configure network connections interactively with nmcli or nmtui.
   networking.networkmanager.enable = true;
-
-  # Set your time zone.
   time.timeZone = "America/Argentina/Buenos_Aires";
 
   # Define a user account. Don't forget to set a password with "passwd".
@@ -189,7 +185,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
     };
 
   networking.firewall.enable = false;
-
   system.stateVersion = "26.11"; # Did you read the comment?
 }
 EOF
