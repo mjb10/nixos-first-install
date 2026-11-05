@@ -40,7 +40,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
       ./hardware-configuration.nix
     ];
 
-  # Use the GRUB 2 boot loader.
   boot = {
     loader.grub = {
       enable = true;
@@ -51,7 +50,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
       linuxPackages_latest
     ;
 
-    # Clean on reboot
 		tmp.cleanOnBoot = true;
   };
 
@@ -68,7 +66,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
   networking.networkmanager.enable = true;
   time.timeZone = "America/Argentina/Buenos_Aires";
 
-  # Define a user account. Don't forget to set a password with "passwd".
    users.users.nixi = {
      isNormalUser = true;
      extraGroups = [ "wheel" "docker" ]; # Enable "sudo" for the user.
@@ -95,10 +92,8 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
   };
 
   environment.systemPackages = with pkgs; [
-    # - Security tools
     fail2ban
 
-    # - System utilities
     git
     btop
 
@@ -171,8 +166,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         };
   };
 
-
-  # Enable the OpenSSH daemon.
   services.openssh = {
         enable = true;
         settings = {

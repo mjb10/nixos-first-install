@@ -36,7 +36,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
       ./hardware-configuration.nix
     ];
 
-  # Use the GRUB 2 boot loader.
   boot = {
     loader.grub = {
       enable = true;
@@ -90,10 +89,8 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
   };
 
   environment.systemPackages = with pkgs; [
-    # - Security tools
     fail2ban
 
-    # - System utilities
     git
     btop
 
@@ -166,8 +163,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         };
   };
 
-
-  # Enable the OpenSSH daemon.
   services.openssh = {
         enable = true;
         settings = {
