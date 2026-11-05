@@ -7,13 +7,13 @@ sudo -i
 parted /dev/vda -- mklabel msdos
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted /dev/vda -- mkpart primary 1MB -4GB
+parted /dev/vda -- mkpart primary 1MB -1GB
 
 # Set the root partition’s boot flag to on. This allows the disk to be booted from.
 parted /dev/vda -- set 1 boot on
 
 # Finally, add a swap partition. The size required will vary according to needs, here a 8GB one is created.
-parted /dev/vda -- mkpart primary linux-swap -4GB 100%
+parted /dev/vda -- mkpart primary linux-swap -1GB 100%
 
 #Formatting
 mkfs.ext4 -L nixos /dev/vda1
