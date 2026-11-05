@@ -261,17 +261,17 @@ EOF
 # setting password for user 'root'
 echo ""
 echo "Now set new password for user 'root'"
-echo "Type new password: "
-read -s passwordRoot
+read -srp "Type new password: " passwordRoot
 
 # Installation of NixOS
 echo "$passwordRoot" | nixos-install
 
 # Setting password for Nixi
+echo ""
 echo "Now set new password for user 'nixi'"
-echo "Type new password: "
-read -s password
+read -srp "Type new password: " password
 echo "$password" | nixos-enter --root /mnt -c 'passwd nixi'
+echo ""
 
 echo "Everything's done!"
 echo "Now shutting down the system..."
