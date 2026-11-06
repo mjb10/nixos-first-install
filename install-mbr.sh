@@ -105,6 +105,9 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
       ];
     };
   };
+EOF
+
+tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   environment.systemPackages = with pkgs; [
     fail2ban

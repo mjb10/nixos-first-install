@@ -68,6 +68,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
       linuxPackages_latest
     ;
 
+    # Clean on reboot
 		tmp.cleanOnBoot = true;
   };
 
@@ -108,6 +109,9 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
       ];
     };
   };
+EOF
+
+tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   environment.systemPackages = with pkgs; [
     fail2ban
@@ -163,22 +167,8 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
   environment = {
         # Aliases de shell disponibles en todos los usuarios (interactive shells)
         shellAliases = {
-            #update = "sudo nixos-generate-config && sudo nixos-rebuild switch --flake git+ssh://git@github.com/mjb10/nixos-server#nixos --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix";
-             update = ''
-                bash -c '
-                  repo_file="/root/.github_repo_url"
-                  repo_url=$(cat "$repo_file" | xargs) # xargs trima whitespace/newlines
-                  echo "Actualizando con repo: $repo_url"
-                  sudo nixos-generate-config && \
-                  sudo nixos-rebuild switch --flake "git+ssh://$repo_url#nixos" \
-                    --refresh --impure --no-write-lock-file \
-                    -I hardware=/etc/nixos/hardware-configuration.nix
-                '
-              '';
             logs = "cd /var/log";
             disco = "df -h";
-            createDeployKeys = "createKeys";
-            connectRepo = "createKeys";
             connect-repo = "createKeys";
         };
   };
