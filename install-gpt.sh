@@ -103,7 +103,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
         echo "Creating GitHub deploy key..."
           sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
 
-        echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key."
+        echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key:"
         echo ""
           sudo cat /root/.ssh/github_deploy_key.pub
         echo ""
