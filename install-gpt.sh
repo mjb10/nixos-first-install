@@ -98,14 +98,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
     btop
 
     (writeShellScriptBin "createKeys" ''
-        sudo tee /root/.ssh/config > /dev/null << 'EOF'
-Host github.com
-  HostName github.com
-  User git
-  IdentityFile /root/.ssh/github_deploy_key
-  IdentitiesOnly yes
-  StrictHostKeyChecking accept-new
-EOF
+        echo -e "Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/github_deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new" | sudo tee /root/.ssh/config > /dev/null
 
         echo "Creating GitHub deploy key..."
           sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
