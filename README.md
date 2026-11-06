@@ -2,12 +2,28 @@
 Primera instalación de NixOS para servers VPS. Probado en servers Upcloud.
 
 ### Comandos:
-#### Comando CURL para discos GPT (UEFI): 
+
+Al recién crear el VPS Nixos va a bootear el CD/DVD de instalacion. Entonces correr uno de estos comandos
+
+#### Para discos MBR (BIOS)
+(Este es el correcto para VPS Upcloud)
+```bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr.sh | bash
 ```
+
+#### Comando CURL para discos GPT (UEFI): 
+(No copiar este comando para Upcloud)
+```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt.sh | bash
 ```
 
-#### Comando CURL para discos MBR (BIOS):
+Luego loguearse con el usuario "nixi" via ssh:
+```bash
+ssh nixi@[IP del servidor]
 ```
-curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr.sh | bash
+
+Una vez ingresado al server con usuario 'nixi' ejecutar este comando:
+```bash
+connect-repo
 ```
+Seguir los pasos. EL VPS se va actualizar con el nuevo repo y se reiniciará.
