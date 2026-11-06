@@ -19,7 +19,6 @@ curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads
 
 #### Comando CURL para discos GPT (UEFI): 
 
-*(No copiar este comando para Upcloud)*
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt.sh | bash
 ```
