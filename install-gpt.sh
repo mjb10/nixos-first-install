@@ -30,6 +30,9 @@ swapon /dev/vda2
 # create template for NixOS configuration
 nixos-generate-config --root /mnt
 
+# Clean the terminal before proceeding with user setup
+clear
+
 # setting password for user 'root'
 echo ""
 echo "Now set new password for privileged user 'root'"
