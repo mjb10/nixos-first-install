@@ -119,7 +119,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         echo -e "Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/github_deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new" | sudo tee /root/.ssh/config > /dev/null
 
         echo "Creating GitHub deploy key..."
-          sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""
+          sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""  > /dev/null
 
         echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key:"
         echo ""
@@ -130,7 +130,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
           read repoUrl
 
         repoParsed=$(tr ':' '/' <<< "$repoUrl")
-        echo "$repoParsed" | sudo tee /root/.github_repo_url
+        echo "$repoParsed" | sudo tee /root/.github_repo_url  > /dev/null
 
         echo ""
         echo "Repositorio se guardó correctamente: $repoParsed"
