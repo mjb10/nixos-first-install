@@ -126,8 +126,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     (writeShellScriptBin "createKeys" ''
         echo -e "Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/github_deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new" | sudo tee /root/.ssh/config > /dev/null
 
-        echo "Creating GitHub deploy key..."
-          sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""  > /dev/null
+        sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N ""  > /dev/null
 
         echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key:"
         echo ""
