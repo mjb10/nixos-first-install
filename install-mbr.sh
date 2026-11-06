@@ -26,6 +26,24 @@ swapon /dev/vda2
 # create template for NixOS configuration
 nixos-generate-config --root /mnt
 
+# setting password for user 'root'
+echo ""
+echo "Now set new password for privileged user 'root'"
+read -rp "Type new password: " passwordRoot < /dev/tty
+echo "Password for root is saved!"
+
+echo ""
+# Setting username for new user
+echo "Now set the username for the new user"
+read -rp "Type username for new user: " username < /dev/tty
+echo ""
+# Setting password for new user
+echo "Now set new password for user '$username'"
+read -rp "Type new password: " password < /dev/tty
+
+echo ""
+echo "All users are set!"
+
 # Configuration startup
 tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
 
@@ -63,7 +81,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
   networking.networkmanager.enable = true;
   time.timeZone = "America/Argentina/Buenos_Aires";
 
-   users.users.nixi = {
+   users.users.$username = {
      isNormalUser = true;
      extraGroups = [ "wheel" "docker" ]; # Enable "sudo" for the user.
      packages = with pkgs; [
@@ -76,7 +94,7 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
       enable = true;
       extraRules = [
         {
-          users = [ "nixi" ];
+          users = [ "$username" ];
           commands = [
             {
               command = "ALL";
@@ -163,24 +181,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
   system.stateVersion = "26.11"; # Did you read the comment?
 }
 EOF
-
-# setting password for user 'root'
-echo ""
-echo "Now set new password for privileged user 'root'"
-read -rp "Type new password: " passwordRoot < /dev/tty
-echo "Password for root is saved!"
-
-echo ""
-# Setting username for new user
-echo "Now set the username for the new user"
-read -rp "Type username for new user: " username < /dev/tty
-echo ""
-# Setting password for new user
-echo "Now set new password for user '$username'"
-read -rp "Type new password: " password < /dev/tty
-
-echo ""
-echo "All users are set!"
 
 echo ""
 echo "Now installing NixOS..."
