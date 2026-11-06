@@ -118,8 +118,11 @@ EOF
         repoParsed=$(tr ':' '/' <<< "$repoUrl")
         echo "$repoParsed" | sudo tee /root/.github_repo_url
 
+        echo ""
         echo "Repositorio se guardó correctamente: $repoParsed"
+        echo ""
         echo "Ejecutando actualización..."
+        echo ""
 
         update
 
