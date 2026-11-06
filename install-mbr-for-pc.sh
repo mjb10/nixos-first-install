@@ -117,11 +117,10 @@ EOF
 tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   environment.systemPackages = with pkgs; [
-    fail2ban
-
     git
-    btop
 
+    # Custom shell script for managing GitHub deploy keys and updating from a repo.
+    # You can delete this script.
     (writeShellScriptBin "createKeys" ''
         echo -e "Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/github_deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new" | sudo tee /root/.ssh/config > /dev/null
 
@@ -156,15 +155,17 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         exit 0
     '')
 
-     (writeShellScriptBin "update" ''
-                  repo_file="/root/.github_repo_url"
-                  repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
-                  echo "Actualizando con repo: $repo_url"
-                  sudo nixos-generate-config
-                  sudo nixos-rebuild boot --flake "git+ssh://$repo_url#nixos" \
-                    --refresh --impure --no-write-lock-file \
-                    -I hardware=/etc/nixos/hardware-configuration.nix
-     '')
+    # custom shell script for updating from the GitHub repo
+    # You can delete this script.
+    (writeShellScriptBin "update" ''
+      repo_file="/root/.github_repo_url"
+      repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
+      echo "Actualizando con repo: $repo_url"
+      sudo nixos-generate-config
+      sudo nixos-rebuild boot --flake "git+ssh://$repo_url#nixos" \
+        --refresh --impure --no-write-lock-file \
+        -I hardware=/etc/nixos/hardware-configuration.nix
+    '')
   ];
 
   environment = {
