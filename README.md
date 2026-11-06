@@ -3,7 +3,9 @@ Primera instalación de NixOS para servers VPS. Probado en servers Upcloud.
 
 ## Comandos:
 
-<h3 style="text-align: center"> Para servidores VPS </h3>
+<div align="center">
+    <h3> Para servidores VPS </h3>
+</div>
 
 Al recién crear el VPS Nixos va a bootear el CD/DVD de instalacion. Entonces correr uno de estos comandos que estan a continuación.
 
@@ -41,7 +43,9 @@ Seguir los pasos. EL VPS se va actualizar con el nuevo repo y se reiniciará.
 
 <br>
 
-<h3 style="text-align: center"> Para PCs </h3>
+<div align="center">
+    <h3> Para PCs </h3>
+</div>
 
 #### Para discos MBR (BIOS):
 ```bash
