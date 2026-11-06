@@ -21,7 +21,7 @@ Durante la ejecución del script se consultará el nombre para el nuevo usuario 
 
 Luego loguearse con el nuevo usuario via ssh:
 ```bash
-ssh -o StrictHostKeyChecking=no [nombre de usuario creado]@[IP del servidor]
+ssh -o UserKnownHostsFile=/tmp/known_hosts_tmp -o StrictHostKeyChecking=no [nombre de usuario creado]@[IP del servidor]
 ```
 
 Una vez ingresado al server con usuario 'nixi' ejecutar este comando:
