@@ -33,6 +33,7 @@ clear
 echo ""
 echo "Now set new password for privileged user 'root'"
 read -rp "Type new password: " passwordRoot < /dev/tty
+echo ""
 echo "Password for root is saved!"
 
 echo ""
