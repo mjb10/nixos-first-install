@@ -45,7 +45,7 @@ echo ""
 echo "All users are set!"
 
 # Configuration startup
-tee /mnt/etc/nixos/configuration.nix > /dev/null << 'EOF'
+tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
 
 { config, lib, pkgs, ... }:
 {
