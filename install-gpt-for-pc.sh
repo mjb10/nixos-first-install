@@ -173,18 +173,16 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   ];
 
   environment = {
-        # Aliases de shell disponibles en todos los usuarios (interactive shells)
-        shellAliases = {
-            logs = "cd /var/log";
-            disco = "df -h";
-            connect-repo = "createKeys";
-        };
+    shellAliases = {
+      # Alias for connecting to the GitHub repository
+      connect-repo = "createKeys";
+    };
   };
 
   services.openssh = {
         enable = true;
         settings = {
-            PermitRootLogin = "yes"; # "yes" or "no"
+            PermitRootLogin = "no";
             PasswordAuthentication = true;
             AllowGroups = [
                 "wheel"
