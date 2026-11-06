@@ -39,7 +39,7 @@ read -rp "Type username for new user: " username < /dev/tty
 echo ""
 # Setting password for new user
 echo "Now set new password for user '$username'"
-read -rp "Type new password: " password < /dev/tty
+read -rp "Type new password for '$username': " password < /dev/tty
 
 echo ""
 echo "All users are set!"
