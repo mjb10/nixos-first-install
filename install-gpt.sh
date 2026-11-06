@@ -183,23 +183,29 @@ EOF
 
 # setting password for user 'root'
 echo ""
-echo "Now set new password for user 'root'"
+echo "Now set new password for privileged user 'root'"
 read -rp "Type new password: " passwordRoot < /dev/tty
-echo "Password for root set!"
+echo "Password for root is saved!"
 
 echo ""
-echo "Installing NixOS..."
+# Setting username for new user
+echo "Now set the username for the new user"
+read -rp "Type username for new user: " username < /dev/tty
+echo ""
+# Setting password for new user
+echo "Now set new password for user '$username'"
+read -rp "Type new password: " password < /dev/tty
+
+echo ""
+echo "All users are set!"
+
+echo ""
+echo "Now installing NixOS..."
 echo ""
 # Installation of NixOS
 echo "$passwordRoot" | nixos-install
 
-# Setting password for Nixi
-echo ""
-echo "Now set new password for user 'nixi'"
-read -rp "Type new password: " password < /dev/tty
-#nixos-enter --root /mnt
-#echo "$password" | passwd nixi
-echo "nixi:$password" | chpasswd -R /mnt
+echo "$username:$password" | chpasswd -R /mnt
 echo ""
 
 echo "Everything's done!"
