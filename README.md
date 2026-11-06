@@ -53,7 +53,7 @@ Seguir los pasos. EL VPS se va actualizar con el nuevo repo y se reiniciará.
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr-for-pc.sh | bash
 ```
 ---
-#### Comando CURL para discos GPT (UEFI): 
+#### Para discos GPT (UEFI): 
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-for-pc.sh | bash
 ```
