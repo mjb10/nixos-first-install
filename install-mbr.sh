@@ -37,6 +37,7 @@ echo ""
 echo "Now set the username for the new user"
 read -rp "Type username for new user: " username < /dev/tty
 echo ""
+
 # Setting password for new user
 echo "Now set new password for user '$username'"
 read -rp "Type new password for '$username': " password < /dev/tty
@@ -44,7 +45,7 @@ read -rp "Type new password for '$username': " password < /dev/tty
 echo ""
 echo "All users are set!"
 
-# Configuration startup
+# Configuration setup
 tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
 
 { config, lib, pkgs, ... }:
@@ -188,12 +189,14 @@ EOF
 echo ""
 echo "Now installing NixOS..."
 echo ""
-# Installation of NixOS
+# Installation of NixOS and setting 'root' password
 echo "$passwordRoot" | nixos-install
 
+# Setting the new user
 echo "$username:$password" | chpasswd -R /mnt
 echo ""
 
+# Final messages
 echo "Everything's done!"
 echo ""
 echo "Now shutting down the system..."
@@ -201,5 +204,5 @@ echo ""
 echo "Don't forget to REMOVE the installation media and then boot the system!"
 sleep 5
 
-# shutdown the system after installationr
+# shutdown the system after installation
 poweroff
