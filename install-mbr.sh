@@ -4,27 +4,27 @@
 sudo -i
 
 # create mbr partition table
-parted /dev/vda -- mklabel msdos
+parted /dev/vda -- mklabel msdos > /dev/null
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted /dev/vda -- mkpart primary 1MB -1GB
+parted /dev/vda -- mkpart primary 1MB -1GB > /dev/null
 
 # Set the root partition’s boot flag to on. This allows the disk to be booted from.
-parted /dev/vda -- set 1 boot on
+parted /dev/vda -- set 1 boot on > /dev/null
 
 # Finally, add a swap partition. The size required will vary according to needs, here a 8GB one is created.
-parted /dev/vda -- mkpart primary linux-swap -1GB 100%
+parted /dev/vda -- mkpart primary linux-swap -1GB 100% > /dev/null
 
 #Formatting
-mkfs.ext4 -L nixos /dev/vda1
-mkswap -L swap /dev/vda2
+mkfs.ext4 -L nixos /dev/vda1 > /dev/null
+mkswap -L swap /dev/vda2 > /dev/null
 
 # mounting
-mount /dev/vda1 /mnt
-swapon /dev/vda2
+mount /dev/vda1 /mnt > /dev/null
+swapon /dev/vda2 > /dev/null
 
 # create template for NixOS configuration
-nixos-generate-config --root /mnt
+nixos-generate-config --root /mnt > /dev/null
 
 # setting password for user 'root'
 echo ""
