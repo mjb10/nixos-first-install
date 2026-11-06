@@ -17,9 +17,11 @@ curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt.sh | bash
 ```
 
-Luego loguearse con el usuario "nixi" via ssh:
+Durante la ejecución del script se consultará el nombre para el nuevo usuario y su clave. Luego de apagado el server y quitado CD/DVD de instalación: encender el server.
+
+Luego loguearse con el nuevo usuario via ssh:
 ```bash
-ssh nixi@[IP del servidor]
+ssh [nombre de usuario creado]@[IP del servidor]
 ```
 
 Una vez ingresado al server con usuario 'nixi' ejecutar este comando:
