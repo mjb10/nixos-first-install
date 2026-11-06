@@ -164,6 +164,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       repo_file="/root/.github_repo_url"
       repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
       echo "Actualizando con repo: $repo_url"
+      echo ""
       sudo nixos-generate-config
       sudo nixos-rebuild boot --flake "git+ssh://$repo_url#nixos" \
         --refresh --impure --no-write-lock-file \
