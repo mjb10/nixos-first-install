@@ -10,7 +10,6 @@ Al recién crear el VPS Nixos va a bootear el CD/DVD de instalacion. Entonces co
 
 
 #### Para discos MBR (BIOS):
-Especialmente creado para máquinas virtuales.
 
 *(¡Este es el correcto para VPS Upcloud!)*
 ```bash
@@ -19,7 +18,6 @@ curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads
 ---
 
 #### Comando CURL para discos GPT (UEFI): 
-Especialmente creado para máquinas virtuales.
 
 *(No copiar este comando para Upcloud)*
 ```bash
