@@ -143,7 +143,7 @@ EOF
                   repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
                   echo "Actualizando con repo: $repo_url"
                   sudo nixos-generate-config
-                  sudo nixos-rebuild switch --flake "git+ssh://$repo_url#nixos" \
+                  sudo nixos-rebuild boot --flake "git+ssh://$repo_url#nixos" \
                     --refresh --impure --no-write-lock-file \
                     -I hardware=/etc/nixos/hardware-configuration.nix
      '')
