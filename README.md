@@ -1,5 +1,5 @@
 # nixos-first-install
-Primera instalación de NixOS para servers VPS. Probado en servers Upcloud.
+Scripts para primera instalación de NixOS para servers VPS probados en Upcloud y para computadoras personales.
 
 ## Comandos:
 
