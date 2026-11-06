@@ -17,6 +17,7 @@ Especialmente creado para máquinas virtuales.
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr.sh | bash
 ```
+---
 
 #### Comando CURL para discos GPT (UEFI): 
 Especialmente creado para máquinas virtuales.
@@ -25,7 +26,7 @@ Especialmente creado para máquinas virtuales.
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt.sh | bash
 ```
-
+---
 #### Próximos pasos:
 
 Durante la ejecución del script se consultará el nombre para el nuevo usuario y su clave. Luego de apagado el server y quitado CD/DVD de instalación: encender el server.
@@ -51,7 +52,7 @@ Seguir los pasos. EL VPS se va actualizar con el nuevo repo y se reiniciará.
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr-for-pc.sh | bash
 ```
-
+---
 #### Comando CURL para discos GPT (UEFI): 
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-for-pc.sh | bash
