@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Clean the terminal before proceeding with user setup
+clear
+
 # SUDO
 sudo -i
 
@@ -29,9 +32,6 @@ swapon /dev/vda2
 
 # create template for NixOS configuration
 nixos-generate-config --root /mnt
-
-# Clean the terminal before proceeding with user setup
-clear
 
 # setting password for user 'root'
 echo ""
