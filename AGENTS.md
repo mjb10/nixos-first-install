@@ -3,7 +3,7 @@
 > Contexto completo para agentes de IA (Claude, Codex, Gemini, Copilot, etc.) y para cualquier persona que retome el proyecto.
 > `CLAUDE.md` es solo un alias que importa este archivo: **editá siempre `AGENTS.md`**, nunca `CLAUDE.md`.
 > Historial detallado commit por commit: [`CHANGELOG.md`](CHANGELOG.md) (lo más nuevo arriba).
-> Revisado el **2026-11-07** contra el commit **`a64e250`** (último de `main` a esa fecha). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log a64e250..HEAD -p`) antes de confiar ciegamente en este documento.
+> Revisado el **2026-11-07** contra el commit **`b4f632f`** (último de `main` a esa fecha; los scripts no cambian desde `a64e250`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log b4f632f..HEAD -p`) antes de confiar ciegamente en este documento.
 
 ---
 
@@ -22,7 +22,7 @@
 - **Qué es:** 4 scripts Bash que hacen la *primera instalación* de NixOS desde el ISO live: particionan y formatean un disco, generan un `configuration.nix` mínimo, ejecutan `nixos-install` y apagan la máquina.
 - **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7).
 - **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`) y PCs.
-- **Cómo se ejecuta:** desde el ISO de NixOS, `curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/<script>.sh | bash`.
+- **Cómo se ejecuta:** solo desde el ISO live de NixOS, en la máquina que se va a borrar: `curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/<script>.sh | bash`. ⚠️ Borra el disco sin preguntar: nunca en el host ni en una máquina con datos (§10).
 - **Estado:** solo `install-mbr.sh` está confirmado como funcional (Upcloud). Los scripts GPT casi seguro no arrancan (P2). Hay 10 problemas conocidos sin corregir (§9).
 - **No hay** build, tests automáticos, CI, releases, tags, licencia, `.gitignore` ni `flake.nix` (este repo **no** es un flake; el flake vive en otro repo).
 - **Idiomas:** README y documentación en español (rioplatense). Mensajes del instalador en inglés; mensajes de `createKeys`/`update` en español. Comentarios del código en inglés. Commits en inglés.
@@ -88,6 +88,8 @@ ssh -o UserKnownHostsFile=/tmp/known_hosts_tmp -o StrictHostKeyChecking=no <usua
 Esas opciones evitan el error de *host key* cambiada al reinstalar un VPS con la misma IP y no ensucian `~/.ssh/known_hosts`.
 
 ### Fase 3 — Conexión al repo del flake (`connect-repo`)
+
+> ⚠️ Todo lo de esta fase corre **en el sistema recién instalado** (el VPS o la PC nueva), nunca en el host. Ahí `sudo nixos-generate-config` sobrescribe `/etc/nixos/hardware-configuration.nix`, `sudo nixos-rebuild boot …` cambia la configuración con la que arranca la máquina y `createKeys` pisa `/root/.ssh/config` y reinicia. Los comandos de abajo describen el código: no son para copiar y ejecutar.
 
 `connect-repo` es un alias de shell (`environment.shellAliases`) que ejecuta el comando `createKeys`. Los alias solo existen en shells interactivos: en un comando no interactivo (p. ej. `ssh host comando`) hay que llamar a `createKeys` directamente.
 
@@ -255,7 +257,7 @@ Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor pa
 
 ## 9. Problemas conocidos
 
-Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.** No los arregles sin que el usuario lo pida, pero tenelos en cuenta (y, si corregís uno, sacalo de esta tabla y anotalo en `CHANGELOG.md`).
+Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.** No los arregles sin que el usuario lo pida, pero tenelos en cuenta (y, si corregís uno, sacalo de esta tabla y anotalo en `CHANGELOG.md`). Los arreglos sugeridos (acá y en los riesgos) son cambios **al texto de los scripts**, no comandos para ejecutar en el host.
 
 | ID | Problema | Dónde | Detalle / arreglo sugerido |
 |---|---|---|---|
@@ -268,7 +270,7 @@ Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.
 | P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`) rompe `users.users.$username` en Nix. `diskName` no se verifica antes de borrar el disco. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
 | P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
 | P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
-| P10 | README desactualizado | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); en "Comandos para PCs" las dos opciones dicen *"(Opción 1)"*; la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC). |
+| P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |
 
 ### Riesgos sin verificar (comprobar en VM antes de asumirlos)
 
@@ -295,6 +297,7 @@ No hay tests automáticos.
 | Lanzar un entorno aislado: el `nix-build` de §10.2, `podman run --network=none …`, una VM | ✅ Sí: son el aislamiento |
 | `bash -n`, `shellcheck`, `nix-instantiate` u otra herramienta sobre los scripts **directamente en el host** | ❌ No: usá §10.2 |
 | Ejecutar los scripts o fragmentos de ellos: `bash script.sh`, `cat script.sh \| bash`, `curl … \| bash`, `source`, copiar y pegar líneas en una terminal, correr los `tee` de los heredocs (escriben en `/mnt/etc/nixos/`) | ❌ Nunca |
+| Ejecutar los comandos del sistema instalado: `connect-repo`, `createKeys`, `update` o las líneas de §3 Fase 3 (`nixos-generate-config`, `nixos-rebuild`, `reboot`) | ❌ Nunca: son para el VPS o la PC recién instalados |
 
 Por qué tan estricto: con `sudo` sin contraseña, un solo error (escribir `bash` en vez de `bash -n`, o agregar `| bash`) alcanza para que un script reparticione un disco (`parted … mklabel`), lo formatee y apague la máquina (`poweroff`), sin preguntar nada.
 
@@ -308,13 +311,13 @@ Desde la raíz del repo:
 cat "$(nix-build --no-out-link -E '
   with import <nixpkgs> {};
   runCommand "check-install-scripts" {
-    src = builtins.path { name = "nixos-first-install"; path = ./.; filter = p: t: baseNameOf p != ".git"; };
+    src = builtins.path { name = "install-scripts"; path = ./.; filter = p: t: lib.hasPrefix "install-" (baseNameOf p) && lib.hasSuffix ".sh" (baseNameOf p); };
     nativeBuildInputs = [ shellcheck ];
   } "cd $src; { for f in install-*.sh; do bash -n $f && echo \"bash -n OK: $f\"; done; shellcheck install-*.sh; } > $out 2>&1 || true"
 ')"
 ```
 
-- **Por qué es seguro:** los comandos corren dentro del sandbox de builds de Nix, con un usuario sin privilegios (`nixbld`), sin red, sin `sudo`, sin acceso a tu `$HOME` ni a los discos (el `/dev` del sandbox no tiene dispositivos de bloque). Solo ven una copia de solo lectura del repo en `/nix/store`. En el host solo queda esa copia y un archivo de texto con el resultado, ambos en `/nix/store`, y se pueden borrar con `nix-collect-garbage`.
+- **Por qué es seguro:** los comandos corren dentro del sandbox de builds de Nix, con un usuario sin privilegios (`nixbld`), sin red, sin `sudo`, sin acceso a tu `$HOME` ni a los discos (el `/dev` del sandbox no tiene dispositivos de bloque). Solo ven una copia de solo lectura de los cuatro `install-*.sh` en `/nix/store`: el `filter` deja afuera todo lo demás, para que ningún otro archivo de la carpeta (por ejemplo, algo sin commitear con datos privados) termine en el store, que es legible por todos los usuarios. En el host solo quedan esa copia y un archivo de texto con el resultado. Como `--no-out-link` no crea raíces de GC, el próximo garbage collection normal los elimina: no hace falta correr nada.
 - **Requisito:** el sandbox de Nix tiene que estar activado. En NixOS viene así por defecto; comprobalo con `grep '^sandbox' /etc/nix/nix.conf` (debe decir `true`). Si dice `false`, **no** uses este método.
 - `<nixpkgs>` tiene que resolver: `nix-instantiate --find-file nixpkgs` debe devolver una ruta.
 - `bash -n` revisa **un solo archivo por invocación** (con `bash -n a.sh b.sh`, `b.sh` se toma como argumento de `a.sh` y no se revisa); por eso el `for`.
@@ -331,6 +334,19 @@ podman run --rm --network=none -v "$PWD":/src:ro -w /src docker.io/koalaman/shel
 ```
 
 Nunca uses `--privileged`, `--device` ni montes `/dev` o discos del host. Preferí `podman` rootless: Docker con el grupo `docker` equivale a root en el host.
+
+### 10.3 Prueba real: solo en una VM descartable
+
+Lo único que prueba el comportamiento de verdad (particionado, el Nix generado, `nixos-install`, `connect-repo`/`update`) es una instalación completa, y se hace **solo** en una máquina virtual que se pueda borrar.
+
+- **Disco:** una imagen de disco nueva y vacía (p. ej. qcow2), creada para la prueba. Nunca le pases a la VM un disco, una partición o un volumen real del host (`/dev/sdX`, `/dev/nvme…`, LVM), ni passthrough de controladoras USB/PCI: el script lo borraría. Los scripts de VPS usan `/dev/vda` fijo, así que el disco de la VM tiene que ser virtio.
+- **Sin carpetas compartidas** con el host (virtiofs, 9p): dentro de la VM los scripts corren como root.
+- **ISO y firmware:** el ISO de NixOS que coincida con `stateVersion` (R4). BIOS para los scripts MBR; UEFI (OVMF) para los GPT (que hoy no arrancan, P2).
+- **Dónde se ejecuta:** el `curl … | bash` (o la URL raw de una rama de prueba, §8) se escribe **en la consola de la VM**. Antes de pegarlo, confirmá que la ventana activa es la de la VM y no una terminal del host. En los scripts de PC, el disco que se ingresa es el de la VM (verificalo con `lsblk` dentro de la VM).
+- **El Nix generado se valida acá:** si `nixos-install` termina sin errores, el `configuration.nix` evaluó y se construyó.
+- **`connect-repo`/`update`:** se prueban dentro de la VM ya instalada, con un repo de prueba o con una deploy key que después borres de GitHub.
+- **Al terminar:** borrá la VM, su imagen de disco y las deploy keys de prueba que hayas cargado en GitHub.
+- **Agentes de IA:** no creen ni arranquen VMs por su cuenta. Denle los pasos al usuario o, si los pide, muéstrenle antes el comando exacto.
 
 ---
 
@@ -357,7 +373,7 @@ Nunca uses `--privileged`, `--device` ni montes `/dev` o discos del host. Prefer
 
 ## 12. Historia en breve
 
-Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (70 commits). Detalle en `CHANGELOG.md`.
+Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `b4f632f`). Detalle en `CHANGELOG.md`.
 
 1. **2026-11-05, mañana:** `install-mbr.sh` inicial con usuario fijo `nixi` y un `configuration.nix` completo (con comentarios por defecto, `fail2ban`, `btop`). Se agregan `createKeys` (deploy key) y un alias `update` con `bash -c` y `nixos-rebuild switch`.
 2. **2026-11-05, mediodía:** `install-gpt.sh` (con `systemd-boot`), README con los comandos `curl`.
@@ -365,7 +381,7 @@ Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (70 commits). De
 4. **2026-11-05, noche:** `update` como binario, URL `:` → `/`, `boot` en vez de `switch`, arreglo del heredoc anidado.
 5. **2026-11-06, mañana:** usuario elegido al instalar, división en dos heredocs, opciones `ssh` del README, scripts para PC, rediseño del README.
 6. **2026-11-06, media mañana–tarde:** paridad total entre los 4 scripts, limpieza (sin `fail2ban`/`btop`/alias extra, `PermitRootLogin = "no"`), salida visible, `clear`, README con opciones y pasos numerados.
-7. **2026-11-07:** reubicación del `clear` (hoy hay dos) y esta documentación (`AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`).
+7. **2026-11-07:** reubicación del `clear` (hoy hay dos), esta documentación (`AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`) y el título *"(Opción 2)"* de GPT en la sección de PCs del README.
 
 ---
 

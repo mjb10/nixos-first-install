@@ -15,13 +15,15 @@ Reglas de mantenimiento: ver [`AGENTS.md` §13](AGENTS.md#13-mantenimiento-de-ch
 
 ## 2026-11-07
 
-- **(sin commitear)** — **Docs:** se agregan `AGENTS.md` (contexto completo del proyecto para agentes y personas: flujo, mecánicas no obvias, convenciones, problemas conocidos P1–P10 y riesgos R1–R4, decisiones de diseño, checklist y la regla de que ninguna prueba de los scripts se ejecuta en el sistema principal: en el host solo se lee el texto, los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red y la instalación en una VM descartable), este `CHANGELOG.md` (reconstruido a partir de los 70 commits) y `CLAUDE.md` (alias que importa `AGENTS.md` con `@AGENTS.md`).
+- **(sin commitear)** — **Docs:** revisión de seguridad de `AGENTS.md`: se agrega §10.3 (prueba real solo en una VM descartable, con disco virtual nuevo y sin discos ni carpetas del host), que se citaba pero faltaba; advertencias de "nunca en el host" en el `curl … | bash` de §1 y en los comandos del sistema instalado (§3 Fase 3 y tabla de §10.1); aclaración de que los arreglos de §9 son cambios al texto de los scripts; el `nix-build` de §10.2 copia al store solo los `install-*.sh` y ya no sugiere `nix-collect-garbage`; P10 actualizado por `b4f632f`.
+- `b4f632f` — **README:** en "Comandos para PCs", el título de GPT pasa de *"(Opción 1)"* a *"(Opción 2)"* (corrige parte de P10).
+- `5b3db9e` — **Docs:** ⚠️ el mensaje (en español) menciona solo `CHANGELOG.md` y `CLAUDE.md`, pero también agrega `AGENTS.md`. Se agregan `AGENTS.md` (contexto completo del proyecto para agentes y personas: flujo, mecánicas no obvias, convenciones, problemas conocidos P1–P10 y riesgos R1–R4, decisiones de diseño, checklist y la regla de que ninguna prueba de los scripts se ejecuta en el sistema principal: en el host solo se lee el texto, los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red y la instalación en una VM descartable), este `CHANGELOG.md` (reconstruido a partir de los 70 commits) y `CLAUDE.md` (alias que importa `AGENTS.md` con `@AGENTS.md`).
 - `a64e250` — **Scripts (4):** vuelve a agregar `clear` (con el comentario *"Clean the terminal before proceeding with user setup"*) justo después de `nixos-generate-config --root /mnt`, antes de los prompts de usuarios. Junto con `ab58750`, desde acá hay **dos** `clear`: uno al principio del script y otro antes de los prompts.
 - `ab58750` — **Scripts (4):** ⚠️ el mensaje dice *"Remove duplicate terminal clear"*, pero no había duplicado: **mueve** el `clear` (y su comentario) de después de `nixos-generate-config` al principio del script, antes de `sudo -i` (corre como usuario `nixos`).
 
 ## 2026-11-06
 
-- `aae049d` — **README:** títulos con *"(Opción 1)"*/*"(Opción 2)"*; "Próximos pasos" numerados **1.**–**4.**; "correr uno de estos comandos" → "optar por uno de estos comandos". En la sección de PCs las dos opciones quedaron como *"(Opción 1)"* (ver P10 en `AGENTS.md`).
+- `aae049d` — **README:** títulos con *"(Opción 1)"*/*"(Opción 2)"*; "Próximos pasos" numerados **1.**–**4.**; "correr uno de estos comandos" → "optar por uno de estos comandos". En la sección de PCs las dos opciones quedaron como *"(Opción 1)"* (corregido en `b4f632f`).
 - `23e3c77` — **Scripts (4):** `update` agrega un `echo ""` después de *"Actualizando con repo: …"*.
 - `9e82d6c` — **Scripts (4):** `createKeys` ya no muestra *"Creating GitHub deploy key..."*; se desindenta la línea de `ssh-keygen`.
 - `25f2528` — **Scripts (4):** `echo ""` después del prompt de la contraseña de root.
