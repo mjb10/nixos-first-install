@@ -48,7 +48,7 @@ connect-repo
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr-for-pc.sh | bash
 ```
 ---
-#### (Opción 1) Para discos GPT (UEFI): 
+#### (Opción 2) Para discos GPT (UEFI): 
 ```bash
 curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-for-pc.sh | bash
 ```
