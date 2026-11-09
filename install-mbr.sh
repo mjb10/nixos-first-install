@@ -118,7 +118,9 @@ EOF
 tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   environment.systemPackages = with pkgs; [
+    fail2ban
     git
+    vim
 
     # Custom shell script for managing GitHub deploy keys and updating from a repo.
     # You can delete this script.
