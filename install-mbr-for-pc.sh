@@ -54,14 +54,31 @@ echo ""
 # Setting password for new user
 echo "Now set new password for user '$username'"
 read -rp "Type new password for '$username': " password < /dev/tty
-
 echo ""
-echo "All users are set!"
+
+echo "Now set the Nix Profile name..."
+echo ""
+echo "ATTENTION! If you are going to connect to a repo it must match with the Nix profile name configured in your flake.nix file you intend to use."
+echo "If you are not connecting to a repo, you can choose any name."
+echo "The default is 'nixos'."
+read -rp "Type Nix Profile name: " nixProfile < /dev/tty
+nixProfile=${nixProfile:-nixos} # Use 'nixos' if left empty
+echo ""
+
+echo "Everything is set!"
 
 # Configuration setup
 tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
-
 { config, lib, pkgs, ... }:
+let
+  # Name of the configuration in the flake (nixosConfigurations.<name>), used by 'update'
+  nixProfileName = "$nixProfile";
+  username = "$username";
+  diskName = "$diskName";
+in
+EOF
+
+tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 {
   imports =
     [ # Include the results of the hardware scan.
@@ -119,9 +136,6 @@ tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
       ];
     };
   };
-EOF
-
-tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   environment.systemPackages = with pkgs; [
     fail2ban
@@ -167,10 +181,13 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     (writeShellScriptBin "update" ''
       repo_file="/root/.github_repo_url"
       repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
+      nixProfileVar="${nixProfileName}" # Nix interpolation: value comes from the 'let' at the top
       echo "Actualizando con repo: $repo_url"
       echo ""
+      echo "Perfil de Nix: $nixProfileVar"
+      echo ""
       sudo nixos-generate-config
-      sudo nixos-rebuild boot --flake "git+ssh://$repo_url#nixos" \
+      sudo nixos-rebuild boot --flake "git+ssh://$repo_url#$nixProfileVar" \
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
     '')

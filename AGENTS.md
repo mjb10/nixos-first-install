@@ -11,7 +11,7 @@
 
 1. **Nunca ejecutes ni pruebes nada de los `install-*.sh` en el sistema principal** (la máquina donde está clonado el repo): borran y reparticionan un disco sin pedir confirmación. En el host solo se **lee** el texto; los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red, y la instalación en una VM descartable (§10).
 2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8).
-3. **Dos heredocs:** lo que se interpola al instalar (`$username`, `$diskName`) va en el bloque 1; el código de `createKeys`/`update` va en el bloque 2, literal (§6.3).
+3. **Dos heredocs:** lo que se interpola al instalar (`$username`, `$diskName`, `$nixProfile`) va en el bloque 1; el código de `createKeys`/`update` va en el bloque 2, literal (§6.3).
 4. **Todo `read` usa `< /dev/tty`**: el script llega por stdin (`curl … | bash`), así que stdin *es* el script (§6.1, §6.2).
 5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `README.md`/`AGENTS.md` si corresponde) (§13, §14).
 
@@ -71,7 +71,7 @@ El ISO minimal de NixOS inicia sesión solo como el usuario `nixos`, que tiene `
 3. **Solo PC:** pide el nombre del disco (`vda`, `sda`, …) → variable `diskName`.
 4. Particiona con `parted`, formatea, monta en `/mnt` y activa la swap (§4). La salida de estos comandos queda visible a propósito.
 5. `nixos-generate-config --root /mnt` → crea `hardware-configuration.nix` y un `configuration.nix` por defecto.
-6. `clear` y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`) y su contraseña (`password`). Se ven en pantalla (P4).
+6. `clear` y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`), su contraseña (`password`) y el nombre del perfil de Nix (`nixProfile`, `nixos` si se deja vacío): el nombre de la configuración del flake que va a construir `update` (`nixosConfigurations.<perfil>`, §7). Se ven en pantalla (P4).
 7. **Sobrescribe** `/mnt/etc/nixos/configuration.nix` con dos heredocs (§5 y §6.3).
 8. `echo "$passwordRoot" | nixos-install` → instala. ⚠️ La contraseña de root **no** se aplica (P1).
 9. `echo "$username:$password" | chpasswd -R /mnt` → contraseña del nuevo usuario.
@@ -102,7 +102,7 @@ Esas opciones evitan el error de *host key* cambiada al reinstalar un VPS con la
 5. Ejecuta `update`:
    - Lee `/root/.github_repo_url` (con `sudo cat … | xargs`, que recorta espacios y saltos de línea).
    - `sudo nixos-generate-config` → regenera `/etc/nixos/hardware-configuration.nix` (no pisa `configuration.nix` porque ya existe).
-   - `sudo nixos-rebuild boot --flake "git+ssh://<url>#nixos" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix`
+   - `sudo nixos-rebuild boot --flake "git+ssh://<url>#<perfil>" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix`
 6. `sleep 10` y `sudo reboot` → arranca la generación construida desde el flake.
 
 Después, `update` queda disponible para volver a sincronizar con el repo (mientras el flake siga incluyendo estos scripts; el propio código dice *"You can delete this script"*).
@@ -128,6 +128,7 @@ Después, `update` queda disponible para volver a sincronizar con el repo (mient
 
 Resultado (igual en los 4 scripts salvo `boot.loader.grub.device`):
 
+- `let nixProfileName = "<perfil>"; in` antes del attribute set: el nombre de perfil ingresado al instalar, que `update` usa como `#<perfil>` (§6.4).
 - `imports = [ ./hardware-configuration.nix ];`
 - `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/$diskName"`). **También en los scripts GPT** (P2).
 - `boot.kernelPackages = pkgs.linuxPackages_latest;`
@@ -176,7 +177,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null  # bloque 2: CON com
 EOF
 ```
 
-- **Bloque 1 (`<< EOF`, sin comillas):** bash expande variables al instalar. Por eso ahí van `$username` y `$diskName`. Cualquier `$`, `$(…)` o comilla invertida también se expandiría: para un `$` literal usá `\$`.
+- **Bloque 1 (`<< EOF`, sin comillas):** bash expande variables al instalar. Por eso ahí van `$username`, `$diskName` y `$nixProfile`. Cualquier `$`, `$(…)` o comilla invertida también se expandiría: para un `$` literal usá `\$`.
 - **Bloque 2 (`<< 'EOF'`, con comillas):** se copia literal. Ahí va el código shell de `createKeys`/`update`, que usa `$repoUrl`, `$(tr …)`, etc. y debe llegar intacto al archivo Nix para ejecutarse **en tiempo de uso**, no al instalar.
 - El attribute set de Nix **se abre en el bloque 1 y se cierra en el bloque 2** (la `}` final). Si movés código entre bloques, mantené las llaves balanceadas.
 - **Ninguna línea del contenido puede ser exactamente `EOF`:** cerraría el heredoc antes de tiempo, y todo lo que sigue se ejecutaría **como comandos de shell en el ISO, como root**. Pasó en `da9847c` (heredoc anidado para `/root/.ssh/config`, cuyo código siguiente incluía `sudo reboot`) y se arregló en `30cab0b` con `echo -e "…\n…" | sudo tee`.
@@ -184,7 +185,7 @@ EOF
 
 ### 6.4 Strings `''…''` de Nix dentro de `writeShellScriptBin`
 
-`createKeys` y `update` son strings multilínea de Nix (`'' … ''`). Dentro de ellos `${…}` es **interpolación de Nix**, no de bash: `${repo_url}` hacía fallar la evaluación (arreglado en `6aef331` usando `$repo_url`). Usá `$var` sin llaves o escapalo como `''${var}`. Para escribir `''` literal se usa `'''`.
+`createKeys` y `update` son strings multilínea de Nix (`'' … ''`). Dentro de ellos `${…}` es **interpolación de Nix**, no de bash: `${repo_url}` hacía fallar la evaluación (arreglado en `6aef331` usando `$repo_url`). Usá `$var` sin llaves o escapalo como `''${var}`. Para escribir `''` literal se usa `'''`. Excepción intencional: `update` usa `${nixProfileName}` para leer la variable del `let` del bloque 1 (la interpola Nix al construir el sistema) y la guarda en la variable de bash `nixProfileVar`.
 
 ### 6.5 `nixos-rebuild boot` + `reboot` (no `switch`)
 
@@ -201,12 +202,12 @@ El usuario entra por SSH sin privilegios, así que cada comando que toca `/root`
 Este repo **no** contiene la configuración final; `update` la trae de otro repo. Ese repo debe cumplir con:
 
 1. Ser un flake en la raíz, accesible por SSH en GitHub con la deploy key generada (`Host github.com` está fijo en `/root/.ssh/config`).
-2. Exponer **`nixosConfigurations.nixos`** (el `#nixos` está fijo en `update`).
+2. Exponer **`nixosConfigurations.<perfil>`**, donde `<perfil>` es el nombre de perfil de Nix ingresado al instalar (`nixos` por defecto; queda fijo en `update` vía `nixProfileName`).
 3. Tolerar `--impure`: se evalúa con `-I hardware=/etc/nixos/hardware-configuration.nix`, así que puede importar el hardware con `<hardware>` o con la ruta absoluta `/etc/nixos/hardware-configuration.nix`.
 4. `--no-write-lock-file` y `--refresh`: siempre toma el último commit de la rama por defecto y no escribe `flake.lock` (que conviene tener commiteado en ese repo).
 5. Definir el bootloader correcto para el disco (p. ej. GRUB en `/dev/vda` en Upcloud), el usuario creado (con `wheel` y sudo, o `update` dejará de funcionar) y el endurecimiento de seguridad.
 6. Si usa `users.mutableUsers = false`, las contraseñas puestas por el instalador con `chpasswd` se pierden: tiene que declararlas (`hashedPassword`, etc.).
-7. Si no incluye `createKeys`/`update`, esos comandos desaparecen tras el primer reinicio.
+7. Si no incluye `createKeys`/`update`, esos comandos desaparecen tras el primer reinicio. Si copia su código, tiene que definir `nixProfileName` (o reemplazar `${nixProfileName}` por el nombre del perfil): sin eso, la evaluación falla.
 
 Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor para servidores es `git@github.com:mjb10/nixos-server` (probablemente privado; no está en este repo).
 
@@ -267,7 +268,7 @@ Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.
 | P4 | Las contraseñas se ven en pantalla | 4 scripts, prompts | `read -rp` sin `-s` y sin confirmación. El `-s` existía (`da5a8f7`) y se perdió al pasar a `/dev/tty` (`7fb73bd`). |
 | P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. |
 | P6 | Nombres de partición incompatibles con NVMe/eMMC | scripts PC | `/dev/$diskName"1"` da `nvme0n1` + `1` = `nvme0n11` en vez de `nvme0n1p1`. |
-| P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`) rompe `users.users.$username` en Nix. `diskName` no se verifica antes de borrar el disco. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
+| P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`) rompe `users.users.$username` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
 | P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
 | P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
 | P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |

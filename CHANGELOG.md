@@ -13,6 +13,10 @@ Reglas de mantenimiento: ver [`AGENTS.md` §13](AGENTS.md#13-mantenimiento-de-ch
 
 ---
 
+## 2026-11-10
+
+- **(sin commitear)** — **Scripts:** en los 4 scripts, nuevo prompt *"Type Nix Profile name"* (después de la contraseña del usuario, leído de `/dev/tty`, `nixos` si se deja vacío). El valor se interpola en el bloque 1 del heredoc como `let nixProfileName = "<perfil>"; in` antes del attribute set del `configuration.nix`, y `update` lo toma con interpolación de Nix (`nixProfileVar="${nixProfileName}"`, en el bloque 2) para construir `--flake "git+ssh://<url>#<perfil>"` en vez del `#nixos` fijo. `update` también muestra *"Perfil de Nix: …"*. **README** y **Docs** (`AGENTS.md` §0, §3, §5, §6.3, §6.4, §7, P7) actualizados.
+
 ## 2026-11-07
 
 - **(sin commitear)** — **Docs:** revisión de seguridad de `AGENTS.md`: se agrega §10.3 (prueba real solo en una VM descartable, con disco virtual nuevo y sin discos ni carpetas del host), que se citaba pero faltaba; advertencias de "nunca en el host" en el `curl … | bash` de §1 y en los comandos del sistema instalado (§3 Fase 3 y tabla de §10.1); aclaración de que los arreglos de §9 son cambios al texto de los scripts; el `nix-build` de §10.2 copia al store solo los `install-*.sh` y ya no sugiere `nix-collect-garbage`; P10 actualizado por `b4f632f`.

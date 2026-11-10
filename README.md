@@ -24,7 +24,7 @@ curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads
 ---
 #### Próximos pasos:
 
-**1.** Durante la ejecución del script se consultará el nombre para el nuevo usuario y su clave. Luego de apagado el server y quitado CD/DVD de instalación: encender el server.
+**1.** Durante la ejecución del script se consultará el nombre para el nuevo usuario, su clave y el nombre del perfil de Nix (si vas a usar `connect-repo`, tiene que coincidir con el nombre de la configuración en el `flake.nix` del repo, `nixosConfigurations.<nombre>`; si lo dejás vacío se usa `nixos`). Luego de apagado el server y quitado CD/DVD de instalación: encender el server.
 
 **2.** Luego loguearse con el nuevo usuario via ssh:
 ```bash
