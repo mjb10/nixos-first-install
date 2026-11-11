@@ -11,7 +11,7 @@
 
 1. **Nunca ejecutes ni pruebes nada de los `install-*.sh` en el sistema principal** (la máquina donde está clonado el repo): borran y reparticionan un disco sin pedir confirmación. En el host solo se **lee** el texto; los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red, y la instalación en una VM descartable (§10).
 2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8).
-3. **Dos heredocs:** lo que se interpola al instalar (`$username`, `$diskName`, `$nixProfile`) va en el bloque 1; el código de `createKeys`/`update` va en el bloque 2, literal (§6.3).
+3. **Dos heredocs:** el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
 4. **Todo `read` usa `< /dev/tty`**: el script llega por stdin (`curl … | bash`), así que stdin *es* el script (§6.1, §6.2).
 5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `README.md`/`AGENTS.md` si corresponde) (§13, §14).
 
@@ -46,7 +46,7 @@ Estructura plana, sin subdirectorios.
 Los 4 scripts son **casi idénticos** (copias). Solo difieren en:
 
 1. **Particionado/formateo/montaje** (MBR vs GPT, §4).
-2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (incluido `boot.loader.grub.device = "/dev/$diskName"`); la swap es de 2 GB en vez de 1 GB.
+2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, `boot.loader.grub.device = "/dev/${diskName}"`, con la variable `diskName` del `let`); la swap es de 2 GB en vez de 1 GB.
 3. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
 
 Todo lo demás (prompts, `configuration.nix`, `createKeys`, `update`, cierre) es igual y **debe mantenerse igual** (§8).
@@ -128,9 +128,9 @@ Después, `update` queda disponible para volver a sincronizar con el repo (mient
 
 Resultado (igual en los 4 scripts salvo `boot.loader.grub.device`):
 
-- `let nixProfileName = "<perfil>"; in` antes del attribute set: el nombre de perfil ingresado al instalar, que `update` usa como `#<perfil>` (§6.4).
+- `let nixProfileName = "<perfil>"; username = "<usuario>"; in` antes del attribute set (en PC, también `diskName = "<disco>";`): los valores ingresados al instalar. `update` usa `nixProfileName` como `#<perfil>` (§6.4); el resto del archivo usa `username` y `diskName` (§6.3).
 - `imports = [ ./hardware-configuration.nix ];`
-- `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/$diskName"`). **También en los scripts GPT** (P2).
+- `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/${diskName}"`). **También en los scripts GPT** (P2).
 - `boot.kernelPackages = pkgs.linuxPackages_latest;`
 - `boot.tmp.cleanOnBoot = true;`
 - `nix.settings`: `experimental-features = [ "nix-command" "flakes" ]`, `max-jobs = "auto"`, `substituters = [ cache.nixos.org, nix-community.cachix.org ]` (P3).
@@ -169,17 +169,20 @@ Como stdin es el propio script, un `read` normal se "comería" las líneas sigui
 
 ```bash
 tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF      # bloque 1: SIN comillas
-  …abre `{`, imports, boot, nix.settings, red, usuario, sudo…
+  { config, lib, pkgs, ... }:
+  let nixProfileName = "$nixProfile"; username = "$username"; diskName = "$diskName"; in
 EOF
 
 tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null  # bloque 2: CON comillas, append
-  …systemPackages (createKeys, update), alias, openssh, firewall, stateVersion y cierra `}`…
+  …abre `{`, imports, boot, nix.settings, red, usuario, sudo, systemPackages (createKeys, update), alias, openssh, firewall, stateVersion y cierra `}`…
 EOF
 ```
 
-- **Bloque 1 (`<< EOF`, sin comillas):** bash expande variables al instalar. Por eso ahí van `$username`, `$diskName` y `$nixProfile`. Cualquier `$`, `$(…)` o comilla invertida también se expandiría: para un `$` literal usá `\$`.
-- **Bloque 2 (`<< 'EOF'`, con comillas):** se copia literal. Ahí va el código shell de `createKeys`/`update`, que usa `$repoUrl`, `$(tr …)`, etc. y debe llegar intacto al archivo Nix para ejecutarse **en tiempo de uso**, no al instalar.
-- El attribute set de Nix **se abre en el bloque 1 y se cierra en el bloque 2** (la `}` final). Si movés código entre bloques, mantené las llaves balanceadas.
+(`diskName` solo existe en los scripts de PC.)
+
+- **Bloque 1 (`<< EOF`, sin comillas):** bash expande variables al instalar. Contiene **solo** el encabezado del módulo y el `let … in`, donde se guardan como strings de Nix los valores ingresados (`$nixProfile`, `$username` y, en PC, `$diskName`). Cualquier `$`, `$(…)` o comilla invertida también se expandiría: para un `$` literal usá `\$`.
+- **Bloque 2 (`<< 'EOF'`, con comillas):** se copia literal. Contiene **todo** el attribute set. Los valores de la instalación se usan acá como **variables de Nix** del `let`, nunca como `$var` de bash: `users.users.${username}`, `users = [ username ];`, `device = "/dev/${diskName}";`, `${nixProfileName}`. Un `$username` acá llega tal cual al archivo: en una ruta de atributos es un error de sintaxis (*"unexpected invalid token"*, pasó en `0198bc8`) y dentro de un string de Nix es texto literal, sin error (la regla de sudo quedaba para un usuario llamado `$username`). El código shell de `createKeys`/`update` (`$repoUrl`, `$(tr …)`, etc.) también va acá porque debe llegar intacto para ejecutarse **en tiempo de uso**, no al instalar.
+- El bloque 1 termina en `in` y el bloque 2 abre y cierra el attribute set (`{` … `}`). El encabezado `{ config, lib, pkgs, ... }:` va **una sola vez**, en el bloque 1: repetido al principio del bloque 2, el módulo devolvería una función en vez de un attribute set (pasó en `install-gpt.sh` en `0198bc8`).
 - **Ninguna línea del contenido puede ser exactamente `EOF`:** cerraría el heredoc antes de tiempo, y todo lo que sigue se ejecutaría **como comandos de shell en el ISO, como root**. Pasó en `da9847c` (heredoc anidado para `/root/.ssh/config`, cuyo código siguiente incluía `sudo reboot`) y se arregló en `30cab0b` con `echo -e "…\n…" | sudo tee`.
 - Antes de `c3cb08a` todo estaba en un único heredoc; en `a9f0198` se le sacaron las comillas para interpolar `$username`, lo que rompía el código de `createKeys` (se ejecutaba `$(tr …)` al instalar). La división en dos bloques es la solución: **no la deshagas**.
 
@@ -268,7 +271,7 @@ Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.
 | P4 | Las contraseñas se ven en pantalla | 4 scripts, prompts | `read -rp` sin `-s` y sin confirmación. El `-s` existía (`da5a8f7`) y se perdió al pasar a `/dev/tty` (`7fb73bd`). |
 | P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. |
 | P6 | Nombres de partición incompatibles con NVMe/eMMC | scripts PC | `/dev/$diskName"1"` da `nvme0n1` + `1` = `nvme0n11` en vez de `nvme0n1p1`. |
-| P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`) rompe `users.users.$username` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
+| P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
 | P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
 | P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
 | P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |
@@ -355,7 +358,7 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 
 | Decisión | Commit | Motivo |
 |---|---|---|
-| Dos heredocs (interpolado + literal) | `a9f0198`, `c3cb08a` | Interpolar `$username`/`$diskName` sin romper el código shell de `createKeys`/`update` (§6.3). |
+| Dos heredocs (interpolado + literal) | `a9f0198`, `c3cb08a`, `0198bc8` | Interpolar `$username`/`$diskName` sin romper el código shell de `createKeys`/`update` (§6.3). Desde `0198bc8` el bloque 1 es solo un `let` y el resto usa variables de Nix. |
 | `createKeys` y `update` como `writeShellScriptBin` en vez de alias | `da9847c` | Los alias con `bash -c '…'` y comillas anidadas eran frágiles; los binarios se pueden llamar entre sí. |
 | `/root/.ssh/config` con `echo -e … \| sudo tee` | `30cab0b` | El heredoc anidado cerraba el heredoc externo (§6.3). |
 | `sudo` por comando dentro de `createKeys` | `c22a15f`, `262276f` | `sudo -i` dentro de un script no eleva los comandos siguientes (§6.6). |
@@ -400,7 +403,7 @@ Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `
 
 1. ¿El cambio aplica a los 4 scripts? Aplicalo en los 4 y corré los `diff` de paridad (§8).
 2. ¿Agregaste un prompt? `read -rp … < /dev/tty` (§6.2).
-3. ¿Tocaste el `configuration.nix`? Variables de instalación → bloque 1; código de `createKeys`/`update` → bloque 2; ninguna línea igual a `EOF`; llaves balanceadas; nada de `${…}` dentro de `'' … ''` (§6.3, §6.4).
+3. ¿Tocaste el `configuration.nix`? Variables de instalación → `let` del bloque 1, y en el bloque 2 se usan como variables de Nix (`${username}`, nunca `$username`); todo lo demás, incluido el código de `createKeys`/`update` → bloque 2; ninguna línea igual a `EOF`; llaves balanceadas; nada de `${…}` dentro de `'' … ''` (§6.3, §6.4).
 4. Chequeos estáticos (`bash -n` y `shellcheck`) **solo** en el sandbox de Nix o en un contenedor sin red (§10.2), nunca en el host. Si el cambio altera el comportamiento, probalo en una VM descartable (§10.3).
 5. `CHANGELOG.md` arriba de todo; `README.md` si cambia algo visible; este archivo si cambia el flujo, la estructura o un problema conocido.
 6. Commit en inglés, imperativo. Para cambios no triviales, rama + prueba en VM antes de `main` (§8, §10).

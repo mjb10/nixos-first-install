@@ -105,7 +105,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   networking.networkmanager.enable = true;
   time.timeZone = "America/Argentina/Buenos_Aires";
 
-   users.users.$username = {
+   users.users.${username} = {
      isNormalUser = true;
      extraGroups = [ "wheel" "docker" ]; # Enable "sudo" for the user.
      packages = with pkgs; [
@@ -118,7 +118,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       enable = true;
       extraRules = [
         {
-          users = [ "$username" ];
+          users = [ username ];
           commands = [
             {
               command = "ALL";

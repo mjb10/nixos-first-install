@@ -52,6 +52,7 @@ echo ""
 # Setting password for new user
 echo "Now set new password for user '$username'"
 read -rp "Type new password for '$username': " password < /dev/tty
+echo ""
 
 echo "Now set the Nix Profile name..."
 echo ""
@@ -75,7 +76,6 @@ in
 EOF
 
 tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
-{ config, lib, pkgs, ... }:
 {
   imports =
     [ # Include the results of the hardware scan.
@@ -109,7 +109,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   networking.networkmanager.enable = true;
   time.timeZone = "America/Argentina/Buenos_Aires";
 
-   users.users.$username = {
+   users.users.${username} = {
      isNormalUser = true;
      extraGroups = [ "wheel" "docker" ]; # Enable "sudo" for the user.
      packages = with pkgs; [
@@ -122,7 +122,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       enable = true;
       extraRules = [
         {
-          users = [ "$username" ];
+          users = [ username ];
           commands = [
             {
               command = "ALL";
