@@ -35,7 +35,7 @@ ssh -o UserKnownHostsFile=/tmp/known_hosts_tmp -o StrictHostKeyChecking=no [nomb
 ```bash
 connect-repo
 ```
-**4.** Seguir los pasos. EL VPS se va actualizar con el nuevo repo y se reiniciará.
+**4.** Seguir los pasos. Después de la URL del repo se pide el nombre de la rama: si lo dejás vacío, se usa la rama principal del repo. El VPS se va a actualizar con el nuevo repo y se reiniciará. Si la actualización falla (por ejemplo, porque la rama no existe), no se reinicia: revisá el error y volvé a intentar con `update && sudo reboot`.
 
 <br>
 

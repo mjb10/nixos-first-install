@@ -101,11 +101,13 @@ Esas opciones evitan el error de *host key* cambiada al reinstalar un VPS con la
 4. Pide la URL SSH del repo (`read repoUrl`; acá sí es interactivo, no hace falta `/dev/tty`) con formato scp: `git@github.com:usuario/repo.git`. Reemplaza **todos** los `:` por `/` (`tr ':' '/'`) → `git@github.com/usuario/repo.git` y la guarda en `/root/.github_repo_url`.
 5. Ejecuta `update`:
    - Lee `/root/.github_repo_url` (con `sudo cat … | xargs`, que recorta espacios y saltos de línea).
+   - Pide el nombre de la rama del repo del flake (`read … rama < /dev/tty`). Si se deja vacío, se usa la rama por defecto del repo (`main`, `master` o la que tenga).
+   - Arma la URL del flake en la variable `repo`: `git+ssh://<url>?ref=<rama>#<perfil>` si se ingresó una rama, o `git+ssh://<url>#<perfil>` si no (§6.7).
    - `sudo nixos-generate-config` → regenera `/etc/nixos/hardware-configuration.nix` (no pisa `configuration.nix` porque ya existe).
-   - `sudo nixos-rebuild boot --flake "git+ssh://<url>#<perfil>" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix`
-6. `sleep 10` y `sudo reboot` → arranca la generación construida desde el flake.
+   - `sudo nixos-rebuild boot --flake "$repo" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix`
+6. Solo si `update` terminó bien (`if update; then … fi`): *"Actualización completada."*, `sleep 5` y `sudo reboot` → arranca la generación construida desde el flake. Si falló (rama inexistente, deploy key sin cargar, perfil que no existe, etc.), muestra *"La actualización falló: no se reinicia el sistema."*, no reinicia y sale con código 1. Se reintenta con `update && sudo reboot`, no con `connect-repo` (regenera la clave, R2).
 
-Después, `update` queda disponible para volver a sincronizar con el repo (mientras el flake siga incluyendo estos scripts; el propio código dice *"You can delete this script"*).
+Después, `update` queda disponible para volver a sincronizar con el repo, y cada vez vuelve a preguntar la rama (mientras el flake siga incluyendo estos scripts; el propio código dice *"You can delete this script"*).
 
 ---
 
@@ -163,7 +165,7 @@ Consecuencias:
 
 ### 6.2 Toda entrada del usuario se lee de `/dev/tty`
 
-Como stdin es el propio script, un `read` normal se "comería" las líneas siguientes del script. Por eso todos los prompts usan `read -rp "…" variable < /dev/tty`. Cualquier prompt nuevo **debe** hacer lo mismo. Lo mismo aplica a cualquier comando que pueda pedir confirmación interactiva (R3). Esto rige solo para el instalador: `createKeys` corre en una sesión SSH interactiva y usa `read` normal.
+Como stdin es el propio script, un `read` normal se "comería" las líneas siguientes del script. Por eso todos los prompts usan `read -rp "…" variable < /dev/tty`. Cualquier prompt nuevo **debe** hacer lo mismo. Lo mismo aplica a cualquier comando que pueda pedir confirmación interactiva (R3). Esto rige solo para el instalador: `createKeys` corre en una sesión SSH interactiva y usa `read` normal. El prompt de la rama de `update` igual lee de `/dev/tty`. Sin terminal (p. ej. `ssh host update` sin `-t`), la redirección falla, `rama` queda vacía y se usa la rama por defecto.
 
 ### 6.3 El `configuration.nix` se escribe con DOS heredocs
 
@@ -192,11 +194,18 @@ EOF
 
 ### 6.5 `nixos-rebuild boot` + `reboot` (no `switch`)
 
-`update` construye la nueva generación y la deja como predeterminada para el próximo arranque; `createKeys` reinicia después. Se cambió de `switch` a `boot` en `77cab70`: el cambio de configuración (red, SSH, usuarios) se aplica en un arranque limpio en vez de en caliente sobre la sesión SSH activa.
+`update` construye la nueva generación y la deja como predeterminada para el próximo arranque; `createKeys` reinicia después, solo si `update` terminó sin error. Se cambió de `switch` a `boot` en `77cab70`: el cambio de configuración (red, SSH, usuarios) se aplica en un arranque limpio en vez de en caliente sobre la sesión SSH activa.
 
 ### 6.6 `sudo` por comando dentro de `createKeys`/`update`
 
 El usuario entra por SSH sin privilegios, así que cada comando que toca `/root` o el sistema lleva su propio `sudo` (sudo sin contraseña por `extraRules`). Un `sudo -i` dentro de un script **no** eleva las líneas siguientes (se probó y se descartó en `c22a15f`).
+
+### 6.7 URL del flake: `?ref=` solo si hay rama, y antes del `#`
+
+`update` arma la URL en la variable de bash `repo` con un `if`: agrega `?ref=<rama>` solo si se ingresó una rama. Si no, no hay `?ref=` y Nix usa la rama por defecto del repo.
+
+- **El orden importa:** en una URL de flake, todo lo que sigue al `#` es el atributo, así que la query va **antes** del fragmento: `git+ssh://<url>?ref=<rama>#<perfil>`. Con `…#<perfil>?ref=<rama>`, `nixos-rebuild` buscaría `nixosConfigurations."<perfil>?ref=<rama>"` y fallaría, aunque la rama esté vacía (`#<perfil>?ref=`).
+- **`if` en vez de `${rama:+…}`:** dentro de `'' … ''`, `${…}` es interpolación de Nix (§6.4).
 
 ---
 
@@ -207,7 +216,7 @@ Este repo **no** contiene la configuración final; `update` la trae de otro repo
 1. Ser un flake en la raíz, accesible por SSH en GitHub con la deploy key generada (`Host github.com` está fijo en `/root/.ssh/config`).
 2. Exponer **`nixosConfigurations.<perfil>`**, donde `<perfil>` es el nombre de perfil de Nix ingresado al instalar (`nixos` por defecto; queda fijo en `update` vía `nixProfileName`).
 3. Tolerar `--impure`: se evalúa con `-I hardware=/etc/nixos/hardware-configuration.nix`, así que puede importar el hardware con `<hardware>` o con la ruta absoluta `/etc/nixos/hardware-configuration.nix`.
-4. `--no-write-lock-file` y `--refresh`: siempre toma el último commit de la rama por defecto y no escribe `flake.lock` (que conviene tener commiteado en ese repo).
+4. `--no-write-lock-file` y `--refresh`: siempre toma el último commit de la rama por defecto (o de la rama que se ingrese en `update`, §6.7) y no escribe `flake.lock` (que conviene tener commiteado en ese repo).
 5. Definir el bootloader correcto para el disco (p. ej. GRUB en `/dev/vda` en Upcloud), el usuario creado (con `wheel` y sudo, o `update` dejará de funcionar) y el endurecimiento de seguridad.
 6. Si usa `users.mutableUsers = false`, las contraseñas puestas por el instalador con `chpasswd` se pierden: tiene que declararlas (`hashedPassword`, etc.).
 7. Si no incluye `createKeys`/`update`, esos comandos desaparecen tras el primer reinicio. Si copia su código, tiene que definir `nixProfileName` (o reemplazar `${nixProfileName}` por el nombre del perfil): sin eso, la evaluación falla.
@@ -269,9 +278,9 @@ Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.
 | P2 | **Los scripts GPT instalan GRUB en modo BIOS** | `install-gpt.sh`, `install-gpt-for-pc.sh` | `boot.loader.grub.device = "/dev/…"` sin `efiSupport` en un disco GPT sin partición `bios_grub`: casi con seguridad `grub-install` falla y, aunque no fallara, un firmware UEFI no lo arrancaría. La ESP se crea y se monta pero no se usa. Originalmente (`daac08f`) usaban `systemd-boot` + `efi.canTouchEfiVariables`; se reemplazó en `4fa0101` al copiar el bloque de MBR. |
 | P3 | El cache `nix-community.cachix.org` no se usa | 4 scripts, `nix.settings` | Se agrega a `substituters` pero sin su clave en `trusted-public-keys`, así que Nix rechaza esos binarios. Agregar la clave pública que publica nix-community.cachix.org o quitar el substituter. |
 | P4 | Las contraseñas se ven en pantalla | 4 scripts, prompts | `read -rp` sin `-s` y sin confirmación. El `-s` existía (`da5a8f7`) y se perdió al pasar a `/dev/tty` (`7fb73bd`). |
-| P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. |
+| P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. (Lo único que revisa un resultado es `createKeys`, que no reinicia si `update` falla.) |
 | P6 | Nombres de partición incompatibles con NVMe/eMMC | scripts PC | `/dev/$diskName"1"` da `nvme0n1` + `1` = `nvme0n11` en vez de `nvme0n1p1`. |
-| P7 | Entradas sin validar | 4 scripts + `createKeys` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. |
+| P7 | Entradas sin validar | 4 scripts + `createKeys`/`update` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. La rama que pide `update` tampoco se valida: si no existe en el repo, falla el fetch, y un nombre con caracteres que significan algo en una URL (`#`, `&`, `%`) arma una URL inválida. |
 | P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
 | P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
 | P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |
@@ -366,6 +375,8 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | Lectura desde `/dev/tty` | `7fb73bd` | stdin es el script (§6.2). |
 | URL `:` → `/` | `da9847c` | Pasar de formato scp a una URL `git+ssh://` válida. |
 | `nixos-rebuild boot` + `reboot` | `77cab70` | §6.5. |
+| Reiniciar solo si `update` terminó bien | (sin commitear) | Si falla el build, no mostrar un "completada" falso ni reiniciar con la configuración del instalador: el error queda en pantalla. |
+| Rama opcional en `update` (`?ref=` solo si se ingresa, antes del `#<perfil>`) | (sin commitear) | Poder construir desde otra rama sin perder la rama por defecto; la query tiene que ir antes del fragmento (§6.7). |
 | Deploy key sin passphrase (`-N ""`) | `6d2bf39` | Que `nixos-rebuild` como root pueda clonar sin intervención. |
 | `PermitRootLogin = "no"` | `3b8644c` | Se probó `"yes"` (`4fa0101`) y se volvió a `"no"`; se entra con el usuario creado. |
 | Usuario elegido al instalar (antes fijo: `nixi`) | `fdf1bc5`, `b83b24e` | Reutilizar los scripts con cualquier usuario. |

@@ -165,15 +165,19 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         echo "Ejecutando actualización..."
         echo ""
 
-        update
+        # Reboot only if the update succeeded; otherwise keep the current system and show the error.
+        if update; then
+          echo "Actualización completada."
+          echo "Reiniciando sistema..."
 
-        echo ""
-        echo "Actualización completada."
-        echo "Reiniciando sistema..."
-
-        sleep 10
-        sudo reboot
-        exit 0
+          sleep 5
+          sudo reboot
+          exit 0
+        else
+          echo "La actualización falló: no se reinicia el sistema."
+          echo "Revisá el error y volvé a intentar con: update && sudo reboot"
+          exit 1
+        fi
     '')
 
     # custom shell script for updating from the GitHub repo
@@ -182,12 +186,27 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       repo_file="/root/.github_repo_url"
       repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
       nixProfileVar="${nixProfileName}" # Nix interpolation: value comes from the 'let' at the top
+      
+      echo "Poner nombre de la rama del repositorio."
+      echo "Si esta vacio, por defecto se usará la principal del repo."
+      read -rp "Nombre de la rama: " rama < /dev/tty
+      echo ""
+      
       echo "Actualizando con repo: $repo_url"
       echo ""
       echo "Perfil de Nix: $nixProfileVar"
       echo ""
+
+      # Pin a branch only if one was given; otherwise Nix uses the default branch of the repo.
+      # In a flake URL the query (?ref=) must go before the fragment (#profile).
+      if [ -n "$rama" ]; then
+        repo="git+ssh://$repo_url?ref=$rama#$nixProfileVar"
+      else
+        repo="git+ssh://$repo_url#$nixProfileVar"
+      fi
+
       sudo nixos-generate-config
-      sudo nixos-rebuild boot --flake "git+ssh://$repo_url#$nixProfileVar" \
+      sudo nixos-rebuild boot --flake "$repo" \
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
     '')
