@@ -210,7 +210,8 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       sudo nixos-generate-config
       sudo nixos-rebuild boot --flake "$repo" \
         --refresh --impure --no-write-lock-file \
-        -I hardware=/etc/nixos/hardware-configuration.nix
+        -I hardware=/etc/nixos/hardware-configuration.nix \
+        disk=$diskName
     '')
   ];
 
