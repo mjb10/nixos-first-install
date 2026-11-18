@@ -134,6 +134,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     fail2ban
     git
     vim
+    tailscale
 
     # Custom shell script for managing GitHub deploy keys and updating from a repo.
     # You can delete this script.
@@ -213,7 +214,9 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     };
   };
 
-  services.openssh = {
+  services = {
+    tailscale.enable = true;
+    openssh = {
         enable = true;
         settings = {
             PermitRootLogin = "no";
@@ -223,6 +226,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
             ];   
         };
     };
+  };
 
   networking.firewall.enable = false;
   system.stateVersion = "26.11"; # Did you read the comment?
