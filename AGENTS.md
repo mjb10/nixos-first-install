@@ -3,7 +3,7 @@
 > Contexto completo para agentes de IA (Claude, Codex, Gemini, Copilot, etc.) y para cualquier persona que retome el proyecto.
 > `CLAUDE.md` es solo un alias que importa este archivo: **editá siempre `AGENTS.md`**, nunca `CLAUDE.md`.
 > Historial detallado commit por commit: [`CHANGELOG.md`](CHANGELOG.md) (lo más nuevo arriba).
-> Revisado el **2026-11-07** contra el commit **`b4f632f`** (último de `main` a esa fecha; los scripts no cambian desde `a64e250`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log b4f632f..HEAD -p`) antes de confiar ciegamente en este documento.
+> Revisado el **2026-11-19** contra el commit **`efdcedd`** más los cambios sin commitear de `connect-tailnet` (ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log efdcedd..HEAD -p`) antes de confiar ciegamente en este documento.
 
 ---
 
@@ -11,7 +11,7 @@
 
 1. **Nunca ejecutes ni pruebes nada de los `install-*.sh` en el sistema principal** (la máquina donde está clonado el repo): borran y reparticionan un disco sin pedir confirmación. En el host solo se **lee** el texto; los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red, y la instalación en una VM descartable (§10).
 2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8).
-3. **Dos heredocs:** el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
+3. **Dos heredocs:** el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile` y, solo en VPS, `$headscaleDomain`, `$headscaleIp`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
 4. **Todo `read` usa `< /dev/tty`**: el script llega por stdin (`curl … | bash`), así que stdin *es* el script (§6.1, §6.2).
 5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `README.md`/`AGENTS.md` si corresponde) (§13, §14).
 
@@ -20,12 +20,12 @@
 ## 1. Resumen rápido
 
 - **Qué es:** 4 scripts Bash que hacen la *primera instalación* de NixOS desde el ISO live: particionan y formatean un disco, generan un `configuration.nix` mínimo, ejecutan `nixos-install` y apagan la máquina.
-- **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7).
+- **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7). Además, con los scripts de VPS la máquina corre su propia **tailnet**: es servidor **headscale** (con HTTPS vía Caddy si se ingresa un dominio, o por HTTP plano con la IP si no) y a la vez nodo **tailscale** de esa tailnet. Las PCs instaladas con los scripts de PC se suman a esa tailnet como clientes con `connect-tailnet` (§3, Fase 2b).
 - **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`) y PCs.
 - **Cómo se ejecuta:** solo desde el ISO live de NixOS, en la máquina que se va a borrar: `curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/<script>.sh | bash`. ⚠️ Borra el disco sin preguntar: nunca en el host ni en una máquina con datos (§10).
 - **Estado:** solo `install-mbr.sh` está confirmado como funcional (Upcloud). Los scripts GPT casi seguro no arrancan (P2). Hay 10 problemas conocidos sin corregir (§9).
 - **No hay** build, tests automáticos, CI, releases, tags, licencia, `.gitignore` ni `flake.nix` (este repo **no** es un flake; el flake vive en otro repo).
-- **Idiomas:** README y documentación en español (rioplatense). Mensajes del instalador en inglés; mensajes de `createKeys`/`update` en español. Comentarios del código en inglés. Commits en inglés.
+- **Idiomas:** README y documentación en español (rioplatense). Mensajes del instalador en inglés; mensajes de `createKeys`/`update`/`tailnet-key` en español. Comentarios del código en inglés. Commits en inglés.
 - **Dueño:** usuario de GitHub `mjb10`. Remoto: `https://github.com/mjb10/nixos-first-install.git`. Única rama: `main`.
 
 ---
@@ -46,8 +46,9 @@ Estructura plana, sin subdirectorios.
 Los 4 scripts son **casi idénticos** (copias). Solo difieren en:
 
 1. **Particionado/formateo/montaje** (MBR vs GPT, §4).
-2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, `boot.loader.grub.device = "/dev/${diskName}"`, con la variable `diskName` del `let`); la swap es de 2 GB en vez de 1 GB.
-3. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
+2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, `boot.loader.grub.device = "/dev/${diskName}"`, con la variable `diskName` del `let`); `update` le pasa al flake `DISK=/dev/${diskName}` (en VPS, `DISK=/dev/vda`, §7); la swap es de 2 GB en vez de 1 GB.
+3. **Tailnet, VPS vs PC (desde el 2026-11-19):** los de VPS son el **servidor** headscale: prompt del dominio/IP, `headscaleDomain`/`headscaleIp` en el `let`, `services.headscale`, `services.caddy`, `systemd.services.tailnet-join` y el comando `tailnet-key`. Los de PC son **clientes**: nada de eso, y en su lugar el comando `connect-tailnet` (§3, Fase 2b). Ambos tienen `tailscale` y `services.tailscale.enable = true`, con comentarios distintos.
+4. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
 
 Todo lo demás (prompts, `configuration.nix`, `createKeys`, `update`, cierre) es igual y **debe mantenerse igual** (§8).
 
@@ -71,7 +72,7 @@ El ISO minimal de NixOS inicia sesión solo como el usuario `nixos`, que tiene `
 3. **Solo PC:** pide el nombre del disco (`vda`, `sda`, …) → variable `diskName`.
 4. Particiona con `parted`, formatea, monta en `/mnt` y activa la swap (§4). La salida de estos comandos queda visible a propósito.
 5. `nixos-generate-config --root /mnt` → crea `hardware-configuration.nix` y un `configuration.nix` por defecto.
-6. `clear` y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`), su contraseña (`password`) y el nombre del perfil de Nix (`nixProfile`, `nixos` si se deja vacío): el nombre de la configuración del flake que va a construir `update` (`nixosConfigurations.<perfil>`, §7). Se ven en pantalla (P4).
+6. `clear` y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`), su contraseña (`password`) y el nombre del perfil de Nix (`nixProfile`, `nixos` si se deja vacío): el nombre de la configuración del flake que va a construir `update` (`nixosConfigurations.<perfil>`, §7), y, **solo en los scripts de VPS**, el dominio público de headscale (`headscaleDomain`, p. ej. `headscale.example.com`; se le sacan `http://`, `https://` y la `/` final si se escriben). Si el dominio queda vacío (modo solo IP), muestra la IP detectada (la de origen de la ruta por defecto: `ip -4 route get 1.1.1.1`) y pide la IP para headscale (`headscaleIp`; vacío = la detectada; se repite hasta que haya una). Al final muestra la URL resultante. Se ven en pantalla (P4).
 7. **Sobrescribe** `/mnt/etc/nixos/configuration.nix` con dos heredocs (§5 y §6.3).
 8. `echo "$passwordRoot" | nixos-install` → instala. ⚠️ La contraseña de root **no** se aplica (P1).
 9. `echo "$username:$password" | chpasswd -R /mnt` → contraseña del nuevo usuario.
@@ -86,6 +87,20 @@ ssh -o UserKnownHostsFile=/tmp/known_hosts_tmp -o StrictHostKeyChecking=no <usua
 ```
 
 Esas opciones evitan el error de *host key* cambiada al reinstalar un VPS con la misma IP y no ensucian `~/.ssh/known_hosts`.
+
+### Fase 2b — Tailnet: el VPS es servidor headscale (automático) y las PCs se suman como clientes (`connect-tailnet`)
+
+> ⚠️ Igual que la Fase 3: corre **en el sistema instalado**, nunca en el host.
+
+Todo lo que sigue, hasta "Otros dispositivos", es **solo de los scripts de VPS**.
+
+- **Dos modos**, según si se ingresó un dominio al instalar:
+  - **Con dominio (recomendado):** `server_url = https://<headscaleDomain>`. `headscale` escucha solo en `127.0.0.1:8080` y Caddy lo publica con HTTPS. Antes del primer arranque, el dominio tiene que tener un registro DNS A/AAAA hacia la IP pública de la máquina, con los puertos 80 y 443 accesibles (el firewall está apagado): Caddy los usa para sacar el certificado de Let's Encrypt, y si el DNS todavía no apunta, reintenta solo.
+  - **Solo IP (dominio vacío):** `server_url = http://<headscaleIp>:8080`. `headscale` escucha en `0.0.0.0:8080` por HTTP plano y Caddy no se habilita (`lib.mkIf (headscaleDomain != "")`). Riesgos: sin TLS, la clave pública del servidor se baja por HTTP la primera vez, así que nada autentica al servidor (alguien en el medio podría hacerse pasar por headscale y manejar la coordinación; el tráfico entre nodos sigue cifrado con WireGuard); la documentación de headscale solo muestra `https://` para las apps, y alguna podría no aceptar `http` (sin verificar); y la IP queda fija en todos los dispositivos, así que si cambia hay que volver a registrarlos. Detrás de NAT hay que ingresar la IP pública y redirigir el puerto 8080.
+- **Servidor:** MagicDNS con `base_domain = "tailnet.internal"` (los nodos quedan como `<hostname>.tailnet.internal`) y `override_local_dns = false` (no se pisan los DNS de cada dispositivo). Sin política de ACL: todos los nodos se ven entre sí. Los DERP son los públicos de Tailscale (el DERP embebido de headscale está apagado).
+- **La máquina se une sola a su tailnet** con el servicio `tailnet-join` (systemd, oneshot, en cada arranque): espera a que respondan `headscale` y `tailscaled`; si el estado de Tailscale es `NeedsLogin` crea (si falta) el usuario de headscale con el mismo nombre que el usuario de Linux, genera una pre-auth key de un solo uso que vence en 10 minutos y ejecuta `tailscale up --login-server http://127.0.0.1:8080 --auth-key … --accept-dns=false --timeout 2m`. Si ya está en la tailnet (`Running`) o se bajó a mano (`Stopped`, con `tailscale down`), no hace nada. La clave nunca se muestra ni se guarda. Usa el login server local para no depender de que el certificado HTTPS ya exista; la propia máquina no usa MagicDNS. Si falla, se ve con `systemctl status tailnet-join` y se reintenta con `sudo systemctl restart tailnet-join`.
+- **Otros dispositivos:** el comando `tailnet-key` (`writeShellScriptBin`, por SSH en la máquina) crea (si falta) el mismo usuario de headscale, genera una pre-auth key de un solo uso que vence en 1 hora y muestra el comando para el dispositivo nuevo: `sudo tailscale up --login-server <server_url> --auth-key <clave>` (toma la URL de `config.services.headscale.settings.server_url`, así que sirve en los dos modos). En las apps (Android, iOS, macOS, Windows) se configura `<server_url>` como servidor personalizado; la página de login muestra `headscale auth register --auth-id … --user USERNAME`, que se ejecuta en la máquina con `sudo` (en headscale 0.29, `nodes register` está deprecado).
+- **PCs instaladas con estos scripts (solo scripts de PC):** no corren headscale. Tienen el cliente tailscale habilitado y el comando `connect-tailnet` (`writeShellScriptBin`, interactivo, `read` normal como `createKeys`): pide la URL de headscale y la pre-auth key de `tailnet-key` (la clave con `read -s`, sin mostrarla), ejecuta `sudo tailscale up --login-server <url> --auth-key <clave> --timeout 2m` y muestra la IP de la tailnet (`tailscale ip -4`). No guarda nada en disco. Si falla (clave vencida o ya usada, URL mal escrita), sale con código 1 y se reintenta con otra clave. Sin `--accept-dns=false`: las PCs usan MagicDNS. Si la PC ya estaba en una tailnet con otras opciones, `tailscale up` puede pedir `--reset` o un `sudo tailscale logout` previo.
 
 ### Fase 3 — Conexión al repo del flake (`connect-repo`)
 
@@ -104,7 +119,7 @@ Esas opciones evitan el error de *host key* cambiada al reinstalar un VPS con la
    - Pide el nombre de la rama del repo del flake (`read … rama < /dev/tty`). Si se deja vacío, se usa la rama por defecto del repo (`main`, `master` o la que tenga).
    - Arma la URL del flake en la variable `repo`: `git+ssh://<url>?ref=<rama>#<perfil>` si se ingresó una rama, o `git+ssh://<url>#<perfil>` si no (§6.7).
    - `sudo nixos-generate-config` → regenera `/etc/nixos/hardware-configuration.nix` (no pisa `configuration.nix` porque ya existe).
-   - `sudo nixos-rebuild boot --flake "$repo" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix`
+   - `sudo DISK=/dev/<disco> nixos-rebuild boot --flake "$repo" --refresh --impure --no-write-lock-file -I hardware=/etc/nixos/hardware-configuration.nix` (`DISK=/dev/vda` en VPS; en PC, el disco elegido al instalar; §7)
 6. Solo si `update` terminó bien (`if update; then … fi`): *"Actualización completada."*, `sleep 5` y `sudo reboot` → arranca la generación construida desde el flake. Si falló (rama inexistente, deploy key sin cargar, perfil que no existe, etc.), muestra *"La actualización falló: no se reinicia el sistema."*, no reinicia y sale con código 1. Se reintenta con `update && sudo reboot`, no con `connect-repo` (regenera la clave, R2).
 
 Después, `update` queda disponible para volver a sincronizar con el repo, y cada vez vuelve a preguntar la rama (mientras el flake siga incluyendo estos scripts; el propio código dice *"You can delete this script"*).
@@ -128,9 +143,9 @@ Después, `update` queda disponible para volver a sincronizar con el repo, y cad
 
 ## 5. `configuration.nix` que genera el instalador
 
-Resultado (igual en los 4 scripts salvo `boot.loader.grub.device`):
+Resultado (igual en los 4 scripts salvo `boot.loader.grub.device` y la tailnet: servidor en VPS, cliente en PC, §2):
 
-- `let nixProfileName = "<perfil>"; username = "<usuario>"; in` antes del attribute set (en PC, también `diskName = "<disco>";`): los valores ingresados al instalar. `update` usa `nixProfileName` como `#<perfil>` (§6.4); el resto del archivo usa `username` y `diskName` (§6.3).
+- `let nixProfileName = "<perfil>"; username = "<usuario>"; … in` antes del attribute set: los valores ingresados al instalar. En VPS, también `headscaleDomain = "<dominio>"; headscaleIp = "<ip>";` (con dominio, `headscaleIp` queda vacío; en modo solo IP, `headscaleDomain` queda vacío). En PC, también `diskName = "<disco>";`. `update` usa `nixProfileName` como `#<perfil>` (§6.4); el resto del archivo usa `username`, `headscaleDomain`, `headscaleIp` y `diskName` (§6.3).
 - `imports = [ ./hardware-configuration.nix ];`
 - `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/${diskName}"`). **También en los scripts GPT** (P2).
 - `boot.kernelPackages = pkgs.linuxPackages_latest;`
@@ -140,13 +155,17 @@ Resultado (igual en los 4 scripts salvo `boot.loader.grub.device`):
 - `time.timeZone = "America/Argentina/Buenos_Aires";`
 - `users.users.<username>`: `isNormalUser = true`, `extraGroups = [ "wheel" "docker" ]` (P9), `packages = [ tree ]`.
 - `security.sudo.extraRules`: `<username>` puede ejecutar `ALL` con `NOPASSWD`.
-- `environment.systemPackages`: `git`, `createKeys` y `update` (ambos `writeShellScriptBin`).
+- `environment.systemPackages`: `git`, `vim`, `tailscale`, `createKeys` y `update` (`writeShellScriptBin`), más `tailnet-key` en VPS o `connect-tailnet` en PC (también `writeShellScriptBin`). En VPS, el módulo de headscale agrega además el paquete `headscale` (la CLI de administración, con `sudo`).
 - `environment.shellAliases.connect-repo = "createKeys";`
+- `services.headscale` (solo VPS): `port = 8080`; con dominio, `address = "127.0.0.1"` y `settings.server_url = "https://${headscaleDomain}"`; sin dominio, `address = "0.0.0.0"` y `settings.server_url = "http://${headscaleIp}:8080"` (el puerto sale de `config.services.headscale.port`); `settings.dns = { magic_dns = true; base_domain = "tailnet.internal"; override_local_dns = false; }` (§3, Fase 2b).
+- `services.caddy` (solo VPS y solo con dominio, `lib.mkIf (headscaleDomain != "")`): `virtualHosts.${headscaleDomain}` con `reverse_proxy 127.0.0.1:<puerto de headscale>` y HTTPS automático.
+- `services.tailscale.enable = true;` (cliente, en los 4).
+- `systemd.services.tailnet-join` (solo VPS): une la máquina a su propia tailnet (§3, Fase 2b).
 - `services.openssh`: `enable = true`, `PermitRootLogin = "no"`, `PasswordAuthentication = true`, `AllowGroups = [ "wheel" ]`.
 - `networking.firewall.enable = false;`
 - `system.stateVersion = "26.11";` (fijo; ver R4).
 
-Es una configuración **deliberadamente permisiva y transitoria** (firewall apagado, login por contraseña, sudo sin contraseña): su único objetivo es permitir el primer acceso por SSH y el `connect-repo`. El endurecimiento le corresponde al flake externo.
+Es una configuración **deliberadamente permisiva y transitoria** (firewall apagado, login por contraseña, sudo sin contraseña): su único objetivo es permitir el primer acceso por SSH y el `connect-repo`. El endurecimiento le corresponde al flake externo. Excepción: la tailnet (en VPS, headscale + Caddy + tailscale; en PC, tailscale) es una parte **permanente**, pedida por el dueño del proyecto; su estado vive en `/var/lib/headscale` y `/var/lib/tailscale` y sobrevive a `connect-repo` solo si el flake la mantiene (§7).
 
 ---
 
@@ -190,7 +209,7 @@ EOF
 
 ### 6.4 Strings `''…''` de Nix dentro de `writeShellScriptBin`
 
-`createKeys` y `update` son strings multilínea de Nix (`'' … ''`). Dentro de ellos `${…}` es **interpolación de Nix**, no de bash: `${repo_url}` hacía fallar la evaluación (arreglado en `6aef331` usando `$repo_url`). Usá `$var` sin llaves o escapalo como `''${var}`. Para escribir `''` literal se usa `'''`. Excepción intencional: `update` usa `${nixProfileName}` para leer la variable del `let` del bloque 1 (la interpola Nix al construir el sistema) y la guarda en la variable de bash `nixProfileVar`.
+`createKeys` y `update` son strings multilínea de Nix (`'' … ''`). Dentro de ellos `${…}` es **interpolación de Nix**, no de bash: `${repo_url}` hacía fallar la evaluación (arreglado en `6aef331` usando `$repo_url`). Usá `$var` sin llaves o escapalo como `''${var}`. Para escribir `''` literal se usa `'''`. Excepción intencional: `update` usa `${nixProfileName}` para leer la variable del `let` del bloque 1 (la interpola Nix al construir el sistema) y la guarda en la variable de bash `nixProfileVar`. Lo mismo hacen `tailnet-key` y el `script` del servicio `tailnet-join` (también es un string `''…''`) con `${username}`, `${lib.getExe pkgs.jq}`, `${config.services.headscale.settings.server_url}` y `${toString config.services.headscale.port}`: todos son interpolaciones de Nix a propósito; las variables de bash de esos scripts (`$user`, `$userId`, `$key`, `$state`) van sin llaves.
 
 ### 6.5 `nixos-rebuild boot` + `reboot` (no `switch`)
 
@@ -216,10 +235,12 @@ Este repo **no** contiene la configuración final; `update` la trae de otro repo
 1. Ser un flake en la raíz, accesible por SSH en GitHub con la deploy key generada (`Host github.com` está fijo en `/root/.ssh/config`).
 2. Exponer **`nixosConfigurations.<perfil>`**, donde `<perfil>` es el nombre de perfil de Nix ingresado al instalar (`nixos` por defecto; queda fijo en `update` vía `nixProfileName`).
 3. Tolerar `--impure`: se evalúa con `-I hardware=/etc/nixos/hardware-configuration.nix`, así que puede importar el hardware con `<hardware>` o con la ruta absoluta `/etc/nixos/hardware-configuration.nix`.
+   - `update` también pasa el disco de instalación como **variable de entorno**: `sudo DISK=/dev/<disco> nixos-rebuild …` (en PC, el `diskName` ingresado al instalar; en VPS, `/dev/vda`). El flake lo lee con `builtins.getEnv "DISK"`: es un string común con la ruta completa (`"/dev/sda"`), se puede interpolar normalmente (`"${disk}"`) y, si no está definido (por ejemplo, con un `nixos-rebuild` hecho a mano), devuelve `""` en vez de fallar. Ejemplo: `boot.loader.grub.device = let d = builtins.getEnv "DISK"; in if d != "" then d else "/dev/vda";`. Funciona porque `update` usa `--impure` (sin eso, `getEnv` siempre da `""`) y porque `nixos-rebuild` evalúa el flake con `nix build` heredando el entorno (verificado en el código de `nixos-rebuild-ng`: solo `switch-to-configuration` corre con entorno restringido). `sudo DISK=…` está permitido porque la regla de sudo del usuario es `ALL` (implica `SETENV`). Antes de `5bc319e` se pasaba como `disk=$diskName` suelto y `update` fallaba en PC; se descartó `-I disk=…` porque lo convierte en un *path* de Nix (interpolarlo intentaría copiar `/dev/<disco>` al store) y, si falta, la evaluación falla.
 4. `--no-write-lock-file` y `--refresh`: siempre toma el último commit de la rama por defecto (o de la rama que se ingrese en `update`, §6.7) y no escribe `flake.lock` (que conviene tener commiteado en ese repo).
 5. Definir el bootloader correcto para el disco (p. ej. GRUB en `/dev/vda` en Upcloud), el usuario creado (con `wheel` y sudo, o `update` dejará de funcionar) y el endurecimiento de seguridad.
 6. Si usa `users.mutableUsers = false`, las contraseñas puestas por el instalador con `chpasswd` se pierden: tiene que declararlas (`hashedPassword`, etc.).
 7. Si no incluye `createKeys`/`update`, esos comandos desaparecen tras el primer reinicio. Si copia su código, tiene que definir `nixProfileName` (o reemplazar `${nixProfileName}` por el nombre del perfil): sin eso, la evaluación falla.
+8. **Tailnet:** si no incluye `services.headscale`, `services.caddy` (si se instaló con dominio) y `services.tailscale` con los mismos valores (sobre todo el mismo `server_url`, porque todos los dispositivos quedan registrados contra esa URL; en modo solo IP, también `address = "0.0.0.0"`), la tailnet se cae tras el reinicio de `connect-repo`. Los datos (`/var/lib/headscale`, `/var/lib/tailscale`) quedan en el disco, así que se recupera volviendo a declararla. Si copia `tailnet-key` o `tailnet-join`, tiene que definir `username`, `headscaleDomain` y `headscaleIp` (o reemplazarlos), igual que con `nixProfileName`. En las PCs alcanza con `services.tailscale.enable = true`: la sesión en la tailnet vive en `/var/lib/tailscale` y sobrevive al cambio de configuración (`connect-tailnet` no usa variables del `let`, así que se puede copiar tal cual).
 
 Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor para servidores es `git@github.com:mjb10/nixos-server` (probablemente privado; no está en este repo).
 
@@ -233,11 +254,11 @@ Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor pa
 - Para verificar la paridad después de editar (`diff` solo compara texto y no ejecuta nada de los scripts: es de lo poco que se puede correr en el host, §10.1):
   ```bash
   diff install-mbr.sh install-gpt.sh                # solo debe diferir el particionado
-  diff install-mbr.sh install-mbr-for-pc.sh         # solo diskName, tamaños de swap y espacios
+  diff install-mbr.sh install-mbr-for-pc.sh         # diskName, tamaños de swap, espacios y la tailnet (servidor en VPS, cliente en PC, §2)
   diff install-gpt.sh install-gpt-for-pc.sh         # ídem
   diff install-mbr-for-pc.sh install-gpt-for-pc.sh  # solo el particionado
   ```
-  Referencia al `a64e250`: `diff install-mbr.sh install-gpt.sh | grep -c '^[<>]'` da **18** líneas. Si da más, se rompió la paridad.
+  Referencia al `a64e250`: `diff install-mbr.sh install-gpt.sh | grep -c '^[<>]'` da **18** líneas. Si da más, se rompió la paridad. Al 2026-11-19 (con los cambios de headscale), `install-mbr.sh` vs `install-gpt.sh` y `install-mbr-for-pc.sh` vs `install-gpt-for-pc.sh` dan **20** cada uno (las 2 de más vienen de `76fe019`, ver `CHANGELOG.md`). Entre VPS y PC la diferencia es grande a propósito (la tailnet): ahí revisá a ojo que solo difieran las partes de §2.
 - Si una diferencia nueva es intencional, documentala en §2.
 - La paridad ya se perdió antes: entre `da9847c` y `c3cb08a`, `install-gpt.sh` conservó un alias `update` viejo (con `switch`) que tapaba al binario `update`.
 
@@ -280,11 +301,10 @@ Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.
 | P4 | Las contraseñas se ven en pantalla | 4 scripts, prompts | `read -rp` sin `-s` y sin confirmación. El `-s` existía (`da5a8f7`) y se perdió al pasar a `/dev/tty` (`7fb73bd`). |
 | P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. (Lo único que revisa un resultado es `createKeys`, que no reinicia si `update` falla.) |
 | P6 | Nombres de partición incompatibles con NVMe/eMMC | scripts PC | `/dev/$diskName"1"` da `nvme0n1` + `1` = `nvme0n11` en vez de `nvme0n1p1`. |
-| P7 | Entradas sin validar | 4 scripts + `createKeys`/`update` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. La rama que pide `update` tampoco se valida: si no existe en el repo, falla el fetch, y un nombre con caracteres que significan algo en una URL (`#`, `&`, `%`) arma una URL inválida. |
+| P7 | Entradas sin validar | 4 scripts + `createKeys`/`update` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. La rama que pide `update` tampoco se valida: si no existe en el repo, falla el fetch, y un nombre con caracteres que significan algo en una URL (`#`, `&`, `%`) arma una URL inválida. En VPS, `headscaleDomain` no se valida (solo se le sacan `http://`, `https://` y la `/` final): un dominio que no apunta a la máquina deja a Caddy sin certificado (la máquina se une igual a su tailnet, pero los demás dispositivos no pueden conectarse); una IP o un `host:puerto` escritos ahí no activan el modo solo IP, sino que arman un `https://…` que no funciona; y uno con `"` o `${` rompe el `configuration.nix`. `headscaleIp` tampoco se valida (solo que no quede vacía): si la detección falla o la máquina está detrás de NAT, hay que escribir la IP pública a mano. Para headscale, el usuario de Linux además tiene que tener al menos 2 caracteres y empezar con una letra; si no, `tailnet-join` y `tailnet-key` fallan al crear el usuario de headscale. En PC, `connect-tailnet` solo verifica que la URL y la clave no estén vacías: una URL mal escrita la detecta `tailscale up` (falla o vence el `--timeout 2m`). |
 | P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
 | P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
 | P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |
-
 ### Riesgos sin verificar (comprobar en VM antes de asumirlos)
 
 | ID | Riesgo |
@@ -310,7 +330,7 @@ No hay tests automáticos.
 | Lanzar un entorno aislado: el `nix-build` de §10.2, `podman run --network=none …`, una VM | ✅ Sí: son el aislamiento |
 | `bash -n`, `shellcheck`, `nix-instantiate` u otra herramienta sobre los scripts **directamente en el host** | ❌ No: usá §10.2 |
 | Ejecutar los scripts o fragmentos de ellos: `bash script.sh`, `cat script.sh \| bash`, `curl … \| bash`, `source`, copiar y pegar líneas en una terminal, correr los `tee` de los heredocs (escriben en `/mnt/etc/nixos/`) | ❌ Nunca |
-| Ejecutar los comandos del sistema instalado: `connect-repo`, `createKeys`, `update` o las líneas de §3 Fase 3 (`nixos-generate-config`, `nixos-rebuild`, `reboot`) | ❌ Nunca: son para el VPS o la PC recién instalados |
+| Ejecutar los comandos del sistema instalado: `connect-repo`, `createKeys`, `update`, `tailnet-key`, `connect-tailnet`, `headscale`, `tailscale up` o las líneas de §3 Fase 3 (`nixos-generate-config`, `nixos-rebuild`, `reboot`) | ❌ Nunca: son para el VPS o la PC recién instalados |
 
 Por qué tan estricto: con `sudo` sin contraseña, un solo error (escribir `bash` en vez de `bash -n`, o agregar `| bash`) alcanza para que un script reparticione un disco (`parted … mklabel`), lo formatee y apague la máquina (`poweroff`), sin preguntar nada.
 
@@ -375,8 +395,14 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | Lectura desde `/dev/tty` | `7fb73bd` | stdin es el script (§6.2). |
 | URL `:` → `/` | `da9847c` | Pasar de formato scp a una URL `git+ssh://` válida. |
 | `nixos-rebuild boot` + `reboot` | `77cab70` | §6.5. |
-| Reiniciar solo si `update` terminó bien | (sin commitear) | Si falla el build, no mostrar un "completada" falso ni reiniciar con la configuración del instalador: el error queda en pantalla. |
-| Rama opcional en `update` (`?ref=` solo si se ingresa, antes del `#<perfil>`) | (sin commitear) | Poder construir desde otra rama sin perder la rama por defecto; la query tiene que ir antes del fragmento (§6.7). |
+| Reiniciar solo si `update` terminó bien | `76fe019` | Si falla el build, no mostrar un "completada" falso ni reiniciar con la configuración del instalador: el error queda en pantalla. |
+| Rama opcional en `update` (`?ref=` solo si se ingresa, antes del `#<perfil>`) | `76fe019` | Poder construir desde otra rama sin perder la rama por defecto; la query tiene que ir antes del fragmento (§6.7). |
+| Tailnet propia: headscale detrás de Caddy, en `127.0.0.1:8080` | `efdcedd` | Caddy saca y renueva el certificado HTTPS solo, sin pedir email (con `security.acme` de NixOS habría que poner uno, y sería un dato personal en el repo). La máquina se une a su tailnet por `http://127.0.0.1:8080`, que funciona en los dos modos aunque el certificado todavía no exista. |
+| Modo solo IP (dominio vacío): headscale por HTTP en `0.0.0.0:8080`, sin Caddy | `efdcedd` | Pedido del dueño, para usar headscale sin dominio. Es la alternativa no recomendada (riesgos en §3, Fase 2b); el instalador lo avisa. En el `let` se guardan solo los valores ingresados (`headscaleDomain`, `headscaleIp`) y la URL se arma en el bloque 2. |
+| La máquina se une a su tailnet sola (`tailnet-join`), con una pre-auth key creada en el momento | `efdcedd` | Pedido del dueño: el servidor tiene que quedar como nodo de la tailnet sin pasos manuales. La clave se genera y se usa en la misma máquina (un solo uso, 10 minutos): no se muestra, no se guarda y no pasa por el instalador. |
+| Servidor headscale solo en los scripts de VPS; las PCs son clientes con `connect-tailnet` | `efdcedd` (VPS), sin commitear (`connect-tailnet`) | Decisión del dueño: el servidor de coordinación va en el VPS (IP pública, siempre encendido). `connect-tailnet` sigue el estilo de `connect-repo` (se corre después del primer arranque) y la clave no se guarda en disco ni se pide durante la instalación, donde podría vencer antes del primer arranque. |
+| Disco al flake como variable de entorno `DISK` (en los 4 scripts) | `5bc319e` (PC), `efdcedd` (VPS) | Llega como string con `builtins.getEnv "DISK"`, se interpola sin riesgo y no rompe la evaluación si falta (§7). |
+| `tailnet-key` para sumar otros dispositivos | `efdcedd` | Generar una clave de un solo uso y el comando exacto para el dispositivo nuevo, sin tener que recordar la CLI de headscale (en la 0.29, `preauthkeys create --user` pide el ID numérico del usuario, no el nombre). |
 | Deploy key sin passphrase (`-N ""`) | `6d2bf39` | Que `nixos-rebuild` como root pueda clonar sin intervención. |
 | `PermitRootLogin = "no"` | `3b8644c` | Se probó `"yes"` (`4fa0101`) y se volvió a `"no"`; se entra con el usuario creado. |
 | Usuario elegido al instalar (antes fijo: `nixi`) | `fdf1bc5`, `b83b24e` | Reutilizar los scripts con cualquier usuario. |
