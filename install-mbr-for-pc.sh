@@ -212,6 +212,33 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
     '')
+
+    # Custom shell script to join this machine, as a client, to the tailnet of a headscale server
+    # (the VPS installed with these scripts). The pre-auth key comes from running 'tailnet-key' on that server.
+    # You can delete this script.
+    (writeShellScriptBin "connect-tailnet" ''
+      echo "Para sumar esta máquina a la tailnet, ejecutá 'tailnet-key' en el servidor de headscale (el VPS):"
+      echo "muestra la URL de headscale y una clave de un solo uso que vence en 1 hora."
+      echo ""
+      read -rp "URL de headscale (por ejemplo https://headscale.midominio.com o http://IP:8080): " loginServer
+      read -rsp "Clave (pre-auth key) que mostró tailnet-key: " key
+      echo ""
+      echo ""
+
+      if [ -z "$loginServer" ] || [ -z "$key" ]; then
+        echo "Faltan la URL o la clave: no se hizo nada."
+        exit 1
+      fi
+
+      if sudo tailscale up --login-server "$loginServer" --auth-key "$key" --timeout 2m; then
+        echo ""
+        echo "Listo: esta máquina ya está en la tailnet, con la IP $(sudo tailscale ip -4)."
+      else
+        echo ""
+        echo "No se pudo unir a la tailnet. Revisá la URL y generá otra clave con 'tailnet-key' en el VPS (sirve una sola vez)."
+        exit 1
+      fi
+    '')
   ];
 
   environment = {
@@ -222,6 +249,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   };
 
   services = {
+    # Tailscale client: join the tailnet of the VPS (headscale) with 'connect-tailnet'.
     tailscale.enable = true;
     openssh = {
         enable = true;
