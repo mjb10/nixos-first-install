@@ -59,6 +59,37 @@ read -rp "Type Nix Profile name: " nixProfile < /dev/tty
 nixProfile=${nixProfile:-nixos} # Use 'nixos' if left empty
 echo ""
 
+# Setting the public address of Headscale (Tailscale coordination server that runs on this machine)
+echo "Now set the domain for Headscale (the Tailscale coordination server this machine will run)..."
+echo ""
+echo "With a domain (recommended): it must point (DNS A/AAAA record) to the public IP of this machine, and ports 80 and 443 must be reachable: they are used to get the HTTPS certificate (Let's Encrypt)."
+echo "Without a domain: leave it empty and Headscale will use plain HTTP on the IP of this machine (port 8080)."
+echo "ATTENTION! Without HTTPS the devices can't verify that they are talking to your server, and some Tailscale apps may not accept it."
+echo "Example: headscale.example.com"
+read -rp "Type Headscale domain (empty = use the IP): " headscaleDomain < /dev/tty
+# Accept it with or without 'https://' and a trailing '/'
+headscaleDomain=${headscaleDomain#http://}
+headscaleDomain=${headscaleDomain#https://}
+headscaleDomain=${headscaleDomain%/}
+
+if [ -n "$headscaleDomain" ]; then
+  echo ""
+  echo "Headscale URL: https://$headscaleDomain"
+else
+  # Source address of the default route: the public IP on a VPS (behind NAT it is the local IP)
+  detectedIp=$(ip -4 route get 1.1.1.1 2> /dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+  echo ""
+  echo "Detected IP of this machine: ${detectedIp:-none}"
+  echo "If this machine is behind NAT, type its public IP instead (and forward port 8080 to it)."
+  while [ -z "$headscaleIp" ]; do
+    read -rp "Type the IP for Headscale (empty = detected IP): " headscaleIp < /dev/tty
+    headscaleIp=${headscaleIp:-$detectedIp}
+  done
+  echo ""
+  echo "Headscale URL: http://$headscaleIp:8080"
+fi
+echo ""
+
 echo "Everything is set!"
 
 # Configuration setup
@@ -68,6 +99,10 @@ let
   # Name of the configuration in the flake (nixosConfigurations.<name>), used by 'update'
   nixProfileName = "$nixProfile";
   username = "$username";
+  # Headscale public address: with a domain, server_url = https://<domain> (through Caddy);
+  # with an empty domain, server_url = http://<headscaleIp>:8080 (plain HTTP, no Caddy)
+  headscaleDomain = "$headscaleDomain";
+  headscaleIp = "$headscaleIp";
 in
 EOF
 
@@ -200,9 +235,36 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       fi
 
       sudo nixos-generate-config
-      sudo nixos-rebuild boot --flake "$repo" \
+      # DISK: install disk as a plain string (e.g. /dev/sda). The flake reads it with builtins.getEnv "DISK" (needs --impure)
+      sudo DISK=/dev/vda nixos-rebuild boot --flake "$repo" \
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
+    '')
+
+    # Custom shell script that creates a one-time pre-auth key to join another device to the tailnet.
+    # You can delete this script.
+    (writeShellScriptBin "tailnet-key" ''
+      user="${username}" # Nix interpolation: headscale user (same name as the Linux user)
+      loginServer="${config.services.headscale.settings.server_url}" # Nix interpolation: https://<domain> or http://<ip>:8080
+      jq="${lib.getExe pkgs.jq}"
+
+      userId=$(sudo headscale users list --name "$user" --output json | "$jq" -r '.[0].id // empty')
+      if [ -z "$userId" ]; then
+        sudo headscale users create "$user" > /dev/null || exit 1
+        userId=$(sudo headscale users list --name "$user" --output json | "$jq" -r '.[0].id // empty')
+      fi
+
+      key=$(sudo headscale preauthkeys create --user "$userId" --expiration 1h) || exit 1
+
+      echo "Clave de un solo uso para sumar un dispositivo a la tailnet (vence en 1 hora)."
+      echo ""
+      echo "En el dispositivo nuevo (Linux, con Tailscale instalado), ejecutá:"
+      echo ""
+      echo "  sudo tailscale up --login-server $loginServer --auth-key $key"
+      echo ""
+      echo "En las apps de Tailscale (Android, iOS, macOS, Windows): configurá $loginServer como"
+      echo "servidor de coordinación personalizado e iniciá sesión. La página que se abre muestra el comando"
+      echo "'headscale auth register --auth-id ... --user USERNAME': ejecutalo acá con sudo y --user $user."
     '')
   ];
 
@@ -214,6 +276,39 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   };
 
   services = {
+    # Headscale: coordination server (control plane) of the tailnet.
+    # With a domain it is published by Caddy on https://<headscaleDomain>; without one, on http://<headscaleIp>:8080.
+    # Other devices join with 'tailscale up --login-server <server_url>' (see 'tailnet-key').
+    headscale = {
+      enable = true;
+      # With a domain, only reachable through Caddy; without one, on every interface (plain HTTP)
+      address = if headscaleDomain != "" then "127.0.0.1" else "0.0.0.0";
+      port = 8080;
+      settings = {
+        server_url =
+          if headscaleDomain != ""
+          then "https://${headscaleDomain}"
+          else "http://${headscaleIp}:${toString config.services.headscale.port}";
+        dns = {
+          magic_dns = true;
+          # Devices are reachable as <hostname>.tailnet.internal (it must differ from the server_url domain)
+          base_domain = "tailnet.internal";
+          # Keep the DNS servers of each device; MagicDNS still resolves the tailnet names
+          override_local_dns = false;
+        };
+      };
+    };
+
+    # Only with a domain: reverse proxy with automatic HTTPS (Let's Encrypt) for headscale.
+    # The domain must point to this machine, with ports 80 and 443 reachable (the firewall is disabled).
+    caddy = lib.mkIf (headscaleDomain != "") {
+      enable = true;
+      virtualHosts.${headscaleDomain}.extraConfig = ''
+        reverse_proxy 127.0.0.1:${toString config.services.headscale.port}
+      '';
+    };
+
+    # Tailscale client: this machine is also a node of its own tailnet (see systemd.services.tailnet-join).
     tailscale.enable = true;
     openssh = {
         enable = true;
@@ -225,6 +320,53 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
             ];   
         };
     };
+  };
+
+  # Joins this machine to its own tailnet at boot while Tailscale is not logged in (normally only the first boot),
+  # so it is reachable from the other devices. The pre-auth key is created locally and is never shown nor saved.
+  systemd.services.tailnet-join = {
+    description = "Join this machine to its own headscale tailnet";
+    after = [ "headscale.service" "tailscaled.service" ];
+    requires = [ "headscale.service" "tailscaled.service" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [ config.services.headscale.package config.services.tailscale.package pkgs.jq ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      user="${username}" # Nix interpolation: headscale user (same name as the Linux user)
+
+      # Wait until headscale answers and tailscaled reports a stable state
+      state=""
+      for _ in $(seq 1 30); do
+        state=$(tailscale status --json --peers=false 2> /dev/null | jq -r '.BackendState' || true)
+        if headscale users list > /dev/null 2>&1; then
+          case "$state" in
+            NeedsLogin|NeedsMachineAuth|Running|Stopped) break ;;
+          esac
+        fi
+        sleep 2
+      done
+
+      # Already in the tailnet (or stopped on purpose with 'tailscale down'): nothing to do
+      if [ "$state" != "NeedsLogin" ]; then
+        echo "Tailscale state: $state. Nothing to do."
+        exit 0
+      fi
+
+      userId=$(headscale users list --name "$user" --output json | jq -r '.[0].id // empty')
+      if [ -z "$userId" ]; then
+        headscale users create "$user" > /dev/null
+        userId=$(headscale users list --name "$user" --output json | jq -r '.[0].id // empty')
+      fi
+      key=$(headscale preauthkeys create --user "$userId" --expiration 10m)
+
+      # Local login server: works with or without a domain, even before the HTTPS certificate is ready.
+      # --accept-dns=false: this machine keeps its own DNS servers.
+      tailscale up \
+        --login-server "http://127.0.0.1:${toString config.services.headscale.port}" \
+        --auth-key "$key" \
+        --accept-dns=false \
+        --timeout 2m
+    '';
   };
 
   networking.firewall.enable = false;
