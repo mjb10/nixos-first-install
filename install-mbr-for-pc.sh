@@ -138,7 +138,6 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   };
 
   environment.systemPackages = with pkgs; [
-    fail2ban
     git
     vim
     tailscale
