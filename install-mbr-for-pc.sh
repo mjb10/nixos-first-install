@@ -209,7 +209,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
       fi
 
       sudo nixos-generate-config
-      # DISK: install disk as a plain string (e.g. /dev/sda). The flake reads it with builtins.getEnv "DISK" (needs --impure)
+      # DISK: install disk as a plain string (e.g. sda). The flake reads it with builtins.getEnv "DISK" (needs --impure)
       sudo DISK=/dev/${diskName} nixos-rebuild boot --flake "$repo" \
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
