@@ -117,6 +117,8 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     loader.grub = {
       enable = true;
       device = "/dev/vda";
+      efiSupport = true;
+      efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.

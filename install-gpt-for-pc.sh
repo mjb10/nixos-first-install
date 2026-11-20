@@ -93,6 +93,8 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     loader.grub = {
       enable = true;
       device = "/dev/${diskName}";
+      efiSupport = true;
+      efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.
