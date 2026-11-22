@@ -13,23 +13,23 @@ echo "Please just add the name next to the last '/' (e.g. 'vda', 'sdb' or 'sda')
 read -rp "Disk name: " diskName < /dev/tty
 
 # create gpt partition table
-parted /dev/$diskName -- mklabel gpt
+parted -s /dev/$diskName -- mklabel gpt
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted /dev/$diskName -- mkpart root ext4 1024MB -2GB
+parted -s /dev/$diskName -- mkpart root ext4 1024MB -2GB
 
 # Next, add a swap partition. The size required will vary according to needs, here a 8GB one is created.
-parted /dev/$diskName -- mkpart swap linux-swap -2GB 100%
+parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
 
 # Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It uses the initially reserved 512MiB at the start of the disk.
-parted /dev/$diskName -- mkpart ESP fat32 2MB 1024MB
-parted /dev/$diskName -- set 3 esp on
+parted -s /dev/$diskName -- mkpart ESP fat32 2MB 1024MB
+parted -s /dev/$diskName -- set 3 esp on
 
-parted /dev/$diskName -- mkpart BIOS 1MiB 2MiB
-parted /dev/$diskName -- set 4 bios_grub on
+parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
+parted -s /dev/$diskName -- set 4 bios_grub on
 
 #Formatting
-mkfs.ext4 -L nixos /dev/$diskName"1"
+mkfs.ext4 -F -L nixos /dev/$diskName"1"
 mkswap -L swap /dev/$diskName"2"
 mkfs.fat -F 32 -n boot /dev/$diskName"3"
 
