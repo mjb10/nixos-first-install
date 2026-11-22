@@ -25,8 +25,8 @@ parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
 parted -s /dev/$diskName -- mkpart ESP fat32 2MB 1024MB
 parted -s /dev/$diskName -- set 3 esp on
 
-parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
-parted -s /dev/$diskName -- set 4 bios_grub on
+#parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
+#parted -s /dev/$diskName -- set 4 bios_grub on
 
 #Formatting
 mkfs.ext4 -F -L nixos /dev/$diskName"1"
