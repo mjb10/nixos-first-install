@@ -22,8 +22,11 @@ parted /dev/$diskName -- mkpart root ext4 1024MB -2GB
 parted /dev/$diskName -- mkpart swap linux-swap -2GB 100%
 
 # Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It uses the initially reserved 512MiB at the start of the disk.
-parted /dev/$diskName -- mkpart ESP fat32 1MB 1024MB
+parted /dev/$diskName -- mkpart ESP fat32 2MB 1024MB
 parted /dev/$diskName -- set 3 esp on
+
+parted /dev/$diskName -- mkpart BIOS 1MiB 2MiB
+parted /dev/$diskName -- set 4 bios_grub on
 
 #Formatting
 mkfs.ext4 -L nixos /dev/$diskName"1"
