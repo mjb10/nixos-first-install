@@ -36,7 +36,7 @@ swapon /dev/$diskName"2"
 nixos-generate-config --root /mnt
 
 # Clean the terminal before proceeding with user setup
-clear
+#clear
 
 # setting password for user 'root'
 echo ""
