@@ -8,7 +8,7 @@ Scripts para primera instalación de NixOS para servers VPS probados en Upcloud 
 
 Al recién crear el VPS Nixos va a bootear el CD/DVD de instalacion. Entonces optar por uno de estos comandos que estan a continuación.
 
-#### (Opción 1) Para discos MBR (BIOS):
+#### (Opción 1) Para discos MBR/MSDOS (BIOS):
 
 *(¡Este es el correcto para VPS Upcloud!)*
 ```bash
@@ -51,14 +51,14 @@ Muestra una clave de un solo uso (vence en 1 hora) y el comando para ejecutar en
     <h3> Comandos para PCs </h3>
 </div>
 
-#### (Opción 1) Para discos MBR (BIOS):
+#### (Opción 1) Para discos MBR/MSDOS (BIOS):
 ```bash
-curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-msdos-for-pc.sh | bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-msdos-pc.sh | bash
 ```
 ---
 #### (Opción 2) Para discos GPT (UEFI): 
 ```bash
-curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-for-pc.sh | bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-pc.sh | bash
 ```
 ---
 #### Sumar la PC a la tailnet del VPS:
