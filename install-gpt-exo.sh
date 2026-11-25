@@ -11,7 +11,7 @@
 #
 # Changes from install-gpt-pc.sh: automatic disk detection, eMMC/NVMe partition names (mmcblk0p1), confirmation before
 # erasing, UEFI check, redistributable firmware (Realtek Wi-Fi), DISK without /dev/ in 'update',
-# no docker group, and the same stateVersion as nixos-ferchu.
+# no docker group or Tailscale, user questions before erasing, and the same stateVersion as nixos-ferchu.
 
 # Clean the terminal before proceeding with user setup
 clear
@@ -19,12 +19,63 @@ clear
 # SUDO
 sudo -i
 
+# Ask everything first, before touching the disk
+# Ask for a password twice (visible, by the user's choice) until both match and it is not empty. $1 = variable, $2 = whose
+ask_password() {
+  local first second
+  while true; do
+    read -rp "Type the password for $2: " first < /dev/tty
+    read -rp "Type it again: " second < /dev/tty
+    [ -n "$first" ] && [ "$first" = "$second" ] && break
+    echo "Empty or different passwords: try again."
+  done
+  printf -v "$1" "%s" "$first"
+}
+
+# Clean the terminal before proceeding with user setup
+#clear
+
+# setting password for user 'root'
+echo ""
+ask_password passwordRoot root
+echo ""
+echo "Password for root is saved!"
+
+echo ""
+# Setting username for new user
+echo "Now set the username for the new user"
+while true; do
+  read -rp "Type username for new user: " username < /dev/tty
+  [[ $username =~ ^[a-z_][a-z0-9_-]*$ ]] && [ "$username" != "root" ] && break
+  echo "Invalid username: use lowercase letters, digits, '_' or '-', starting with a letter or '_' (not 'root')."
+done
+echo ""
+
+# Setting password for new user
+ask_password password "$username"
+echo ""
+
+echo "Now set the Nix Profile name..."
+echo ""
+echo "ATTENTION! If you are going to connect to a repo it must match with the Nix profile name configured in your flake.nix file you intend to use."
+echo "If you are not connecting to a repo, you can choose any name."
+echo "The default is 'nixos'."
+read -rp "Type Nix Profile name: " nixProfile < /dev/tty
+nixProfile=${nixProfile:-nixos} # Use 'nixos' if left empty
+echo ""
+
+echo "Everything is set!"
+
 # Detect the disk to install on, without asking: the internal disk. Never the installer USB (mounted
 # at /iso), removable media, USB disks, SD cards (mmc type "SD"; the eMMC is "MMC") or the eMMC boot/rpmb areas.
 # On the EXO Wings it is the eMMC (mmcblk0 or mmcblk1).
 isoDisk=""
 isoSource="$(findmnt -nvo SOURCE /iso 2>/dev/null)"
-[ -n "$isoSource" ] && isoDisk="$(lsblk -ndo PKNAME "$isoSource" 2>/dev/null)"
+if [ -n "$isoSource" ]; then
+  isoDisk="$(lsblk -ndo PKNAME "$isoSource" 2>/dev/null)"
+  # The ISO is usually mounted from the whole USB device, which has no parent: use its own name
+  [ -n "$isoDisk" ] || isoDisk="$(lsblk -ndo NAME "$isoSource" 2>/dev/null)"
+fi
 candidates=()
 emmc=()
 for d in /sys/block/*; do
@@ -94,6 +145,13 @@ installable() {
   return 0
 }
 
+# Stop with an error message (without powering off), also when the script comes through a pipe
+fail() {
+  echo "ERROR: $1"
+  [ -t 0 ] || cat > /dev/null
+  exit 1
+}
+
 cancel() {
   echo "Cancelled: nothing was changed."
   # When the script comes through a pipe, drain the rest so it does not keep running after this exit
@@ -150,38 +208,6 @@ swapon "${part}2"
 # create template for NixOS configuration
 nixos-generate-config --root /mnt
 
-# Clean the terminal before proceeding with user setup
-#clear
-
-# setting password for user 'root'
-echo ""
-echo "Now set new password for privileged user 'root'"
-read -rp "Type new password: " passwordRoot < /dev/tty
-echo ""
-echo "Password for root is saved!"
-
-echo ""
-# Setting username for new user
-echo "Now set the username for the new user"
-read -rp "Type username for new user: " username < /dev/tty
-echo ""
-
-# Setting password for new user
-echo "Now set new password for user '$username'"
-read -rp "Type new password for '$username': " password < /dev/tty
-echo ""
-
-echo "Now set the Nix Profile name..."
-echo ""
-echo "ATTENTION! If you are going to connect to a repo it must match with the Nix profile name configured in your flake.nix file you intend to use."
-echo "If you are not connecting to a repo, you can choose any name."
-echo "The default is 'nixos'."
-read -rp "Type Nix Profile name: " nixProfile < /dev/tty
-nixProfile=${nixProfile:-nixos} # Use 'nixos' if left empty
-echo ""
-
-echo "Everything is set!"
-
 # Configuration setup
 tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
 { config, lib, pkgs, ... }:
@@ -228,7 +254,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 
   nix.settings = {
         experimental-features = [ "nix-command" "flakes" ];
-        max-jobs = "auto"; # "auto"
+        max-jobs = 1; # EXO: 2 GB of RAM, one build at a time (the first update compiles Limine, labwc and wvkbd)
         substituters = [
             "https://cache.nixos.org"
             #"https://nix-community.cachix.org"  # si usas paquetes community
@@ -267,7 +293,6 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   environment.systemPackages = with pkgs; [
     git
     vim
-    #tailscale
 
     # Custom shell script for managing GitHub deploy keys and updating from a repo.
     # You can delete this script.
@@ -340,33 +365,6 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         --refresh --impure --no-write-lock-file \
         -I hardware=/etc/nixos/hardware-configuration.nix
     '')
-
-    # Custom shell script to join this machine, as a client, to the tailnet of a headscale server
-    # (the VPS installed with these scripts). The pre-auth key comes from running 'tailnet-key' on that server.
-    # You can delete this script.
-    #(writeShellScriptBin "connect-tailnet" ''
-     # echo "Para sumar esta máquina a la tailnet, ejecutá 'tailnet-key' en el servidor de headscale (el VPS):"
-     # echo "muestra la URL de headscale y una clave de un solo uso que vence en 1 hora."
-     # echo ""
-     # read -rp "URL de headscale (por ejemplo https://headscale.midominio.com o http://IP:8080): " loginServer
-     # read -rsp "Clave (pre-auth key) que mostró tailnet-key: " key
-     # echo ""
-     # echo ""
-
-     # if [ -z "$loginServer" ] || [ -z "$key" ]; then
-     #   echo "Faltan la URL o la clave: no se hizo nada."
-     #   exit 1
-     # fi
-
-     # if sudo tailscale up --login-server "$loginServer" --auth-key "$key" --timeout 2m; then
-     #   echo ""
-     #   echo "Listo: esta máquina ya está en la tailnet, con la IP $(sudo tailscale ip -4)."
-     # else
-     #   echo ""
-     #   echo "No se pudo unir a la tailnet. Revisá la URL y generá otra clave con 'tailnet-key' en el VPS (sirve una sola vez)."
-     #   exit 1
-     # fi
-   # '')
   ];
 
   environment = {
@@ -377,8 +375,6 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   };
 
   services = {
-    # Tailscale client: join the tailnet of the VPS (headscale) with 'connect-tailnet'.
-    tailscale.enable = true;
     openssh = {
         enable = true;
         settings = {
@@ -401,10 +397,12 @@ echo ""
 echo "Now installing NixOS..."
 echo ""
 # Installation of NixOS and setting 'root' password
-echo "$passwordRoot" | nixos-install
+# nixos-install only asks for the root password on a terminal ([ -t 0 ]), so it is set with chpasswd
+nixos-install --no-root-passwd || fail "nixos-install failed. Read the error above, fix it and run nixos-install again."
+echo "root:$passwordRoot" | chpasswd -R /mnt || fail "Could not set the root password (fix it with: nixos-enter --root /mnt, then passwd)."
 
 # Setting the new user
-echo "$username:$password" | chpasswd -R /mnt
+echo "$username:$password" | chpasswd -R /mnt || fail "Could not set the password for $username (fix it with: nixos-enter --root /mnt, then passwd $username)."
 echo ""
 
 # Final messages
