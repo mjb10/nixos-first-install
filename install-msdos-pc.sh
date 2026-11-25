@@ -26,7 +26,7 @@ parted -s /dev/$diskName -- mkpart primary linux-swap -2GB 100%
 
 #Formatting
 mkfs.ext4 -F -L nixos /dev/$diskName"1"
-mkswap -F -L swap /dev/$diskName"2"
+mkswap -L swap /dev/$diskName"2"
 
 # mounting
 mount /dev/$diskName"1" /mnt
