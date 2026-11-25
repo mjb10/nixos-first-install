@@ -7,20 +7,20 @@ clear
 sudo -i
 
 # create gpt partition table
-parted /dev/vda -- mklabel gpt
+parted -s /dev/vda -- mklabel gpt
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted /dev/vda -- mkpart root ext4 512MB -1GB
+parted -s /dev/vda -- mkpart root ext4 512MB -1GB
 
 # Next, add a swap partition. The size required will vary according to needs, here a 8GB one is created.
-parted /dev/vda -- mkpart swap linux-swap -1GB 100%
+parted -s /dev/vda -- mkpart swap linux-swap -1GB 100%
 
 # Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It uses the initially reserved 512MiB at the start of the disk.
-parted /dev/vda -- mkpart ESP fat32 1MB 512MB
-parted /dev/vda -- set 3 esp on
+parted -s /dev/vda -- mkpart ESP fat32 1MB 512MB
+parted -s /dev/vda -- set 3 esp on
 
 #Formatting
-mkfs.ext4 -L nixos /dev/vda1
+mkfs.ext4 -F -L nixos /dev/vda1
 mkswap -L swap /dev/vda2
 mkfs.fat -F 32 -n boot /dev/vda3
 
@@ -118,11 +118,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     ];
 
   boot = {
-    loader.grub = {
+    loader.limine = {
       enable = true;
-      device = "/dev/vda";
+	    biosSupport = true;
+      biosDevice = "/dev/vda";
       efiSupport = true;
-      efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.

@@ -95,10 +95,9 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   boot = {
     loader.limine = {
       enable = true;
-	  biosSupport = true;
+	    biosSupport = true;
       biosDevice = "/dev/${diskName}";
       efiSupport = true;
-      maxGenerations = 2;
     };
 
     kernelPackages = pkgs.
@@ -114,7 +113,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         max-jobs = "auto"; # "auto"
         substituters = [
             "https://cache.nixos.org"
-            "https://nix-community.cachix.org"  # si usas paquetes community
+            #"https://nix-community.cachix.org"  # si usas paquetes community
         ];
     };
 

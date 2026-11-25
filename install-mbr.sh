@@ -114,11 +114,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     ];
 
   boot = {
-    loader.grub = {
+    loader.limine = {
       enable = true;
-      device = "/dev/vda";
+	    biosSupport = true;
+      biosDevice = "/dev/vda";
       efiSupport = true;
-      efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.

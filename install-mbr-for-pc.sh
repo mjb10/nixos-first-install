@@ -13,20 +13,20 @@ echo "Please just add the name next to the last '/' (e.g. 'vda', 'sdb' or 'sda')
 read -rp "Disk name: " diskName < /dev/tty
 
 # create mbr partition table
-parted /dev/$diskName -- mklabel msdos
+parted -s /dev/$diskName -- mklabel msdos
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted /dev/$diskName -- mkpart primary 1MB -2GB
+parted -s /dev/$diskName -- mkpart primary 1MB -2GB
 
 # Set the root partition’s boot flag to on. This allows the disk to be booted from.
-parted /dev/$diskName -- set 1 boot on
+parted -s /dev/$diskName -- set 1 boot on
 
 # Finally, add a swap partition. The size required will vary according to needs, here a 8GB one is created.
-parted /dev/$diskName -- mkpart primary linux-swap -2GB 100%
+parted -s /dev/$diskName -- mkpart primary linux-swap -2GB 100%
 
 #Formatting
-mkfs.ext4 -L nixos /dev/$diskName"1"
-mkswap -L swap /dev/$diskName"2"
+mkfs.ext4 -F -L nixos /dev/$diskName"1"
+mkswap -F -L swap /dev/$diskName"2"
 
 # mounting
 mount /dev/$diskName"1" /mnt
@@ -86,11 +86,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     ];
 
   boot = {
-    loader.grub = {
+    loader.limine = {
       enable = true;
-      device = "/dev/${diskName}";
+	    biosSupport = true;
+      biosDevice = "/dev/${diskName}";
       efiSupport = true;
-      efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.
@@ -106,7 +106,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         max-jobs = "auto"; # "auto"
         substituters = [
             "https://cache.nixos.org"
-            "https://nix-community.cachix.org"  # si usas paquetes community
+            #"https://nix-community.cachix.org"  # si usas paquetes community
         ];
     };
 
