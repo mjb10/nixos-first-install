@@ -12,7 +12,7 @@ Al recién crear el VPS Nixos va a bootear el CD/DVD de instalacion. Entonces op
 
 *(¡Este es el correcto para VPS Upcloud!)*
 ```bash
-curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr.sh | bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-msdos.sh | bash
 ```
 ---
 
@@ -53,7 +53,7 @@ Muestra una clave de un solo uso (vence en 1 hora) y el comando para ejecutar en
 
 #### (Opción 1) Para discos MBR (BIOS):
 ```bash
-curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-mbr-for-pc.sh | bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-msdos-for-pc.sh | bash
 ```
 ---
 #### (Opción 2) Para discos GPT (UEFI): 
