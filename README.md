@@ -63,6 +63,8 @@ curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads
 ---
 #### Sumar la PC a la tailnet del VPS:
 
+⚠️ Por ahora `connect-tailnet` solo viene en la opción 1 (MBR/MSDOS): en `install-gpt-pc.sh` está desactivado.
+
 Las PCs no corren Headscale: se suman como clientes a la tailnet del VPS (paso 5 de VPS). Primero ejecutá `tailnet-key` en el VPS. Después, en la PC:
 ```bash
 connect-tailnet

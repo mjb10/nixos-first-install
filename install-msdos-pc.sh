@@ -86,11 +86,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     ];
 
   boot = {
-    loader.limine = {
+    loader.grub = {
       enable = true;
-	    biosSupport = true;
-      biosDevice = "/dev/${diskName}";
-      efiSupport = true;
+      device = "/dev/${diskName}";
+      #efiSupport = true;
+      #efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.

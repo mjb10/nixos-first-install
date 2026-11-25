@@ -2,8 +2,9 @@
 
 > Contexto completo para agentes de IA (Claude, Codex, Gemini, Copilot, etc.) y para cualquier persona que retome el proyecto.
 > `CLAUDE.md` es solo un alias que importa este archivo: **editá siempre `AGENTS.md`**, nunca `CLAUDE.md`.
+> Este archivo **describe** el proyecto y cambia poco. El **estado** (qué funciona, qué está probado, problemas, riesgos y correcciones) está en [`STATUS.md`](STATUS.md), que cambia casi tan seguido como el historial.
 > Historial detallado commit por commit: [`CHANGELOG.md`](CHANGELOG.md) (lo más nuevo arriba).
-> Revisado el **2026-11-19** contra el commit **`efdcedd`** más los cambios sin commitear de `connect-tailnet` (ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log efdcedd..HEAD -p`) antes de confiar ciegamente en este documento.
+> Revisado el **2026-11-25** contra el commit **`479bf18`** más los cambios sin commitear del cargador de arranque (GRUB en todos menos `install-gpt-pc.sh`; ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log 479bf18..HEAD -p`) antes de confiar ciegamente en este documento.
 
 ---
 
@@ -13,17 +14,18 @@
 2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8).
 3. **Dos heredocs:** el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile` y, solo en VPS, `$headscaleDomain`, `$headscaleIp`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
 4. **Todo `read` usa `< /dev/tty`**: el script llega por stdin (`curl … | bash`), así que stdin *es* el script (§6.1, §6.2).
-5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `README.md`/`AGENTS.md` si corresponde) (§13, §14).
+5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `STATUS.md`, `README.md` o `AGENTS.md` si corresponde) (§13, §14).
+6. **Leé [`STATUS.md`](STATUS.md) antes de tocar algo:** qué script está probado, qué está roto (P…), qué riesgos hay (R…) y qué falta probar.
 
 ---
 
 ## 1. Resumen rápido
 
 - **Qué es:** 4 scripts Bash que hacen la *primera instalación* de NixOS desde el ISO live: particionan y formatean un disco, generan un `configuration.nix` mínimo, ejecutan `nixos-install` y apagan la máquina.
-- **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7). Además, con los scripts de VPS la máquina corre su propia **tailnet**: es servidor **headscale** (con HTTPS vía Caddy si se ingresa un dominio, o por HTTP plano con la IP si no) y a la vez nodo **tailscale** de esa tailnet. Las PCs instaladas con los scripts de PC se suman a esa tailnet como clientes con `connect-tailnet` (§3, Fase 2b).
-- **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`) y PCs.
+- **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7). Además, con los scripts de VPS la máquina corre su propia **tailnet**: es servidor **headscale** (con HTTPS vía Caddy si se ingresa un dominio, o por HTTP plano con la IP si no) y a la vez nodo **tailscale** de esa tailnet. Las PCs instaladas con los scripts de PC se suman a esa tailnet como clientes con `connect-tailnet` (§3, Fase 2b; hoy solo en `install-msdos-pc.sh`).
+- **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`, hoy `install-msdos.sh`) y PCs.
 - **Cómo se ejecuta:** solo desde el ISO live de NixOS, en la máquina que se va a borrar: `curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/<script>.sh | bash`. ⚠️ Borra el disco sin preguntar: nunca en el host ni en una máquina con datos (§10).
-- **Estado:** solo `install-mbr.sh` está confirmado como funcional (Upcloud). Los scripts GPT casi seguro no arrancan (P2). Hay 10 problemas conocidos sin corregir (§9).
+- **Estado:** en [`STATUS.md`](STATUS.md) (qué script funciona y está probado, problemas conocidos, riesgos y correcciones).
 - **No hay** build, tests automáticos, CI, releases, tags, licencia, `.gitignore` ni `flake.nix` (este repo **no** es un flake; el flake vive en otro repo).
 - **Idiomas:** README y documentación en español (rioplatense). Mensajes del instalador en inglés; mensajes de `createKeys`/`update`/`tailnet-key` en español. Comentarios del código en inglés. Commits en inglés.
 - **Dueño:** usuario de GitHub `mjb10`. Remoto: `https://github.com/mjb10/nixos-first-install.git`. Única rama: `main`.
@@ -36,26 +38,33 @@ Estructura plana, sin subdirectorios.
 
 ### Scripts de instalación
 
-| Archivo | Destino | Tabla de particiones | Firmware previsto | Disco | Swap |
-|---|---|---|---|---|---|
-| `install-mbr.sh` | VPS | MBR (`msdos`) | BIOS | `/dev/vda` (fijo) | 1 GB |
-| `install-gpt.sh` | VPS | GPT | UEFI (⚠️ ver P2) | `/dev/vda` (fijo) | 1 GB |
-| `install-mbr-for-pc.sh` | PC | MBR (`msdos`) | BIOS | se pregunta (`diskName`) | 2 GB |
-| `install-gpt-for-pc.sh` | PC | GPT | UEFI (⚠️ ver P2) | se pregunta (`diskName`) | 2 GB |
+| Archivo | Nombre anterior (hasta `9884e52`/`dda3702`) | Destino | Tabla de particiones | Firmware previsto | Cargador de arranque | Disco | Swap |
+|---|---|---|---|---|---|---|---|
+| `install-msdos.sh` | `install-mbr.sh` | VPS | MBR (`msdos`) | BIOS | GRUB, solo BIOS | `/dev/vda` (fijo) | 1 GB |
+| `install-gpt.sh` | (igual) | VPS | GPT | UEFI | GRUB, solo UEFI (`nodev`) | `/dev/vda` (fijo) | 1 GB |
+| `install-msdos-pc.sh` | `install-mbr-for-pc.sh` | PC | MBR (`msdos`) | BIOS | GRUB, solo BIOS | se pregunta (`diskName`) | 2 GB |
+| `install-gpt-pc.sh` | `install-gpt-for-pc.sh` | PC | GPT | UEFI (y BIOS) | Limine | se pregunta (`diskName`) | 2 GB |
+
+Las URLs raw con los nombres anteriores ya no existen en `main` (devuelven 404).
 
 Los 4 scripts son **casi idénticos** (copias). Solo difieren en:
 
 1. **Particionado/formateo/montaje** (MBR vs GPT, §4).
-2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, `boot.loader.grub.device = "/dev/${diskName}"`, con la variable `diskName` del `let`); `update` le pasa al flake `DISK=/dev/${diskName}` (en VPS, `DISK=/dev/vda`, §7); la swap es de 2 GB en vez de 1 GB.
-3. **Tailnet, VPS vs PC (desde el 2026-11-19):** los de VPS son el **servidor** headscale: prompt del dominio/IP, `headscaleDomain`/`headscaleIp` en el `let`, `services.headscale`, `services.caddy`, `systemd.services.tailnet-join` y el comando `tailnet-key`. Los de PC son **clientes**: nada de eso, y en su lugar el comando `connect-tailnet` (§3, Fase 2b). Ambos tienen `tailscale` y `services.tailscale.enable = true`, con comentarios distintos.
-4. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
+2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, con la variable `diskName` del `let`: `boot.loader.grub.device = "/dev/${diskName}"` en `install-msdos-pc.sh` y `boot.loader.limine.biosDevice = "/dev/${diskName}"` en `install-gpt-pc.sh`); `update` le pasa al flake `DISK=/dev/${diskName}` (en VPS, `DISK=/dev/vda`, §7); la swap es de 2 GB en vez de 1 GB.
+3. **Tailnet, VPS vs PC (desde el 2026-11-19):** los de VPS son el **servidor** headscale: prompt del dominio/IP, `headscaleDomain`/`headscaleIp` en el `let`, `services.headscale`, `services.caddy`, `systemd.services.tailnet-join` y el comando `tailnet-key`. Los de PC son **clientes**: nada de eso, y en su lugar el comando `connect-tailnet` (§3, Fase 2b). Todos tienen `services.tailscale.enable = true`, con comentarios distintos.
+4. **Cargador de arranque (desde el 2026-11-25), según la tabla de particiones:** los MSDOS (VPS y PC) usan **GRUB solo BIOS** (`device = "/dev/vda"`, en PC `"/dev/${diskName}"`, con `#efiSupport = true;` y `#efiInstallAsRemovable = true;` comentados). `install-gpt.sh` usa **GRUB solo UEFI** (`device = "nodev"`, `efiSupport = true`, `efiInstallAsRemovable = true`). `install-gpt-pc.sh` usa **Limine** (`biosSupport = true`, `biosDevice = "/dev/${diskName}"`, `efiSupport = true`; la línea de `biosSupport` está indentada con un tab). Ver §5; el estado de cada uno, en `STATUS.md`.
+5. **Substituters, VPS vs PC (desde `f35753d`):** en los de PC, `https://nix-community.cachix.org` está comentado; en los de VPS sigue activo (P3).
+6. **Segundo `clear`, VPS vs PC:** en los de PC está comentado (`#clear`, desde `e6718da`/`12287c9`); en los de VPS sigue.
+7. **`install-gpt-pc.sh` vs `install-msdos-pc.sh` (desde `f1fcd62`):** además del particionado y del cargador de arranque (punto 4), en el GPT están comentados `tailscale` en `environment.systemPackages` (el comando existe igual, porque lo agrega `services.tailscale`) y todo el `connect-tailnet`. También tiene comentadas las líneas de una partición BIOS (`mkpart BIOS 1MiB 2MiB`, `set 4 bios_grub on`, de `17ecf14`).
+8. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
 
 Todo lo demás (prompts, `configuration.nix`, `createKeys`, `update`, cierre) es igual y **debe mantenerse igual** (§8).
 
 ### Documentación
 
 - `README.md` — instrucciones para el usuario final (en español). Tiene errores conocidos (P10).
-- `AGENTS.md` — este archivo.
+- `AGENTS.md` — este archivo: qué es el proyecto, cómo funciona y cómo se trabaja. Cambia poco.
+- `STATUS.md` — estado actual: qué funciona y está probado, qué falta probar, problemas conocidos (P…), riesgos (R…), correcciones y paridad. Cambia casi a la par del `CHANGELOG.md`.
 - `CHANGELOG.md` — historial de cambios, lo más nuevo arriba (§13).
 - `CLAUDE.md` — alias: solo importa `AGENTS.md` con la sintaxis `@AGENTS.md` de Claude Code.
 
@@ -70,9 +79,9 @@ El ISO minimal de NixOS inicia sesión solo como el usuario `nixos`, que tiene `
 1. `clear` → limpia la pantalla (todavía como usuario `nixos`).
 2. `sudo -i` → el resto del script corre como root (§6.1 explica por qué funciona y por qué depende del pipe).
 3. **Solo PC:** pide el nombre del disco (`vda`, `sda`, …) → variable `diskName`.
-4. Particiona con `parted`, formatea, monta en `/mnt` y activa la swap (§4). La salida de estos comandos queda visible a propósito.
+4. Particiona con `parted -s`, formatea (`mkfs.ext4 -F`), monta en `/mnt` y activa la swap (§4). La salida de estos comandos queda visible a propósito.
 5. `nixos-generate-config --root /mnt` → crea `hardware-configuration.nix` y un `configuration.nix` por defecto.
-6. `clear` y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`), su contraseña (`password`) y el nombre del perfil de Nix (`nixProfile`, `nixos` si se deja vacío): el nombre de la configuración del flake que va a construir `update` (`nixosConfigurations.<perfil>`, §7), y, **solo en los scripts de VPS**, el dominio público de headscale (`headscaleDomain`, p. ej. `headscale.example.com`; se le sacan `http://`, `https://` y la `/` final si se escriben). Si el dominio queda vacío (modo solo IP), muestra la IP detectada (la de origen de la ruta por defecto: `ip -4 route get 1.1.1.1`) y pide la IP para headscale (`headscaleIp`; vacío = la detectada; se repite hasta que haya una). Al final muestra la URL resultante. Se ven en pantalla (P4).
+6. `clear` (solo en VPS: en PC está comentado, §2) y pide, leyendo de `/dev/tty`: contraseña de root (`passwordRoot`), nombre del nuevo usuario (`username`), su contraseña (`password`) y el nombre del perfil de Nix (`nixProfile`, `nixos` si se deja vacío): el nombre de la configuración del flake que va a construir `update` (`nixosConfigurations.<perfil>`, §7), y, **solo en los scripts de VPS**, el dominio público de headscale (`headscaleDomain`, p. ej. `headscale.example.com`; se le sacan `http://`, `https://` y la `/` final si se escriben). Si el dominio queda vacío (modo solo IP), muestra la IP detectada (la de origen de la ruta por defecto: `ip -4 route get 1.1.1.1`) y pide la IP para headscale (`headscaleIp`; vacío = la detectada; se repite hasta que haya una). Al final muestra la URL resultante. Se ven en pantalla (P4).
 7. **Sobrescribe** `/mnt/etc/nixos/configuration.nix` con dos heredocs (§5 y §6.3).
 8. `echo "$passwordRoot" | nixos-install` → instala. ⚠️ La contraseña de root **no** se aplica (P1).
 9. `echo "$username:$password" | chpasswd -R /mnt` → contraseña del nuevo usuario.
@@ -100,7 +109,7 @@ Todo lo que sigue, hasta "Otros dispositivos", es **solo de los scripts de VPS**
 - **Servidor:** MagicDNS con `base_domain = "tailnet.internal"` (los nodos quedan como `<hostname>.tailnet.internal`) y `override_local_dns = false` (no se pisan los DNS de cada dispositivo). Sin política de ACL: todos los nodos se ven entre sí. Los DERP son los públicos de Tailscale (el DERP embebido de headscale está apagado).
 - **La máquina se une sola a su tailnet** con el servicio `tailnet-join` (systemd, oneshot, en cada arranque): espera a que respondan `headscale` y `tailscaled`; si el estado de Tailscale es `NeedsLogin` crea (si falta) el usuario de headscale con el mismo nombre que el usuario de Linux, genera una pre-auth key de un solo uso que vence en 10 minutos y ejecuta `tailscale up --login-server http://127.0.0.1:8080 --auth-key … --accept-dns=false --timeout 2m`. Si ya está en la tailnet (`Running`) o se bajó a mano (`Stopped`, con `tailscale down`), no hace nada. La clave nunca se muestra ni se guarda. Usa el login server local para no depender de que el certificado HTTPS ya exista; la propia máquina no usa MagicDNS. Si falla, se ve con `systemctl status tailnet-join` y se reintenta con `sudo systemctl restart tailnet-join`.
 - **Otros dispositivos:** el comando `tailnet-key` (`writeShellScriptBin`, por SSH en la máquina) crea (si falta) el mismo usuario de headscale, genera una pre-auth key de un solo uso que vence en 1 hora y muestra el comando para el dispositivo nuevo: `sudo tailscale up --login-server <server_url> --auth-key <clave>` (toma la URL de `config.services.headscale.settings.server_url`, así que sirve en los dos modos). En las apps (Android, iOS, macOS, Windows) se configura `<server_url>` como servidor personalizado; la página de login muestra `headscale auth register --auth-id … --user USERNAME`, que se ejecuta en la máquina con `sudo` (en headscale 0.29, `nodes register` está deprecado).
-- **PCs instaladas con estos scripts (solo scripts de PC):** no corren headscale. Tienen el cliente tailscale habilitado y el comando `connect-tailnet` (`writeShellScriptBin`, interactivo, `read` normal como `createKeys`): pide la URL de headscale y la pre-auth key de `tailnet-key` (la clave con `read -s`, sin mostrarla), ejecuta `sudo tailscale up --login-server <url> --auth-key <clave> --timeout 2m` y muestra la IP de la tailnet (`tailscale ip -4`). No guarda nada en disco. Si falla (clave vencida o ya usada, URL mal escrita), sale con código 1 y se reintenta con otra clave. Sin `--accept-dns=false`: las PCs usan MagicDNS. Si la PC ya estaba en una tailnet con otras opciones, `tailscale up` puede pedir `--reset` o un `sudo tailscale logout` previo.
+- **PCs instaladas con estos scripts (solo scripts de PC):** no corren headscale. Tienen el cliente tailscale habilitado y el comando `connect-tailnet` (⚠️ desde `f1fcd62`, solo en `install-msdos-pc.sh`: en `install-gpt-pc.sh` está comentado, y para sumar esa PC hay que ejecutar a mano el `sudo tailscale up …` que muestra `tailnet-key`) (`writeShellScriptBin`, interactivo, `read` normal como `createKeys`): pide la URL de headscale y la pre-auth key de `tailnet-key` (la clave con `read -s`, sin mostrarla), ejecuta `sudo tailscale up --login-server <url> --auth-key <clave> --timeout 2m` y muestra la IP de la tailnet (`tailscale ip -4`). No guarda nada en disco. Si falla (clave vencida o ya usada, URL mal escrita), sale con código 1 y se reintenta con otra clave. Sin `--accept-dns=false`: las PCs usan MagicDNS. Si la PC ya estaba en una tailnet con otras opciones, `tailscale up` puede pedir `--reset` o un `sudo tailscale logout` previo.
 
 ### Fase 3 — Conexión al repo del flake (`connect-repo`)
 
@@ -130,32 +139,37 @@ Después, `update` queda disponible para volver a sincronizar con el repo, y cad
 
 | Script | Partición 1 | Partición 2 | Partición 3 |
 |---|---|---|---|
-| `install-mbr.sh` | root ext4, etiqueta `nixos`, `1MB` → `-1GB`, flag `boot` | swap, etiqueta `swap`, `-1GB` → `100%` | — |
-| `install-mbr-for-pc.sh` | igual, hasta `-2GB` | swap `-2GB` → `100%` | — |
+| `install-msdos.sh` | root ext4, etiqueta `nixos`, `1MB` → `-1GB`, flag `boot` | swap, etiqueta `swap`, `-1GB` → `100%` | — |
+| `install-msdos-pc.sh` | igual, hasta `-2GB` | swap `-2GB` → `100%` | — |
 | `install-gpt.sh` | root ext4 `nixos`, `512MB` → `-1GB` | swap `swap`, `-1GB` → `100%` | ESP FAT32, etiqueta `boot`, `1MB` → `512MB`, flag `esp`, montada en `/mnt/boot` |
-| `install-gpt-for-pc.sh` | igual, hasta `-2GB` | swap `-2GB` → `100%` | igual |
+| `install-gpt-pc.sh` | root ext4 `nixos`, `1024MB` → `-2GB` | swap `-2GB` → `100%` | ESP FAT32 `boot`, `1MB` → `1024MB` (desde `56b7b24`), flag `esp`, montada en `/mnt/boot` |
 
 - En GPT la ESP es la **partición 3** aunque físicamente esté al principio del disco, porque se crea última. Los `mkfs`/`mount` dependen de esa numeración.
+- Los scripts MSDOS **no tienen ninguna partición FAT**: `/boot` queda dentro de la ext4. Por eso usan GRUB solo BIOS: Limine solo lee particiones FAT (se usó desde `f35753d` y se revirtió el 2026-11-25).
+- `install-gpt-pc.sh` tiene comentada una partición 4 BIOS boot (`1MiB` → `2MiB`, flag `bios_grub`, de `17ecf14`), que se agregó para GRUB en modo BIOS sobre GPT. No hay ninguna partición `bios_grub` activa en los GPT.
 - Dispositivos: VPS usa `/dev/vda1..3`; PC usa `/dev/$diskName"1"..` (no sirve para NVMe/eMMC, P6).
-- `parted` se invoca sin `-s` (modo script) y `mkfs` sin `-F` (ver R3).
+- Desde el 2026-11-25, los 4 usan `parted -s` (modo script: nunca pide confirmación) y `mkfs.ext4 -F` (formatea aunque haya un sistema de archivos previo). Con eso se resolvió R3.
 
 ---
 
 ## 5. `configuration.nix` que genera el instalador
 
-Resultado (igual en los 4 scripts salvo `boot.loader.grub.device` y la tailnet: servidor en VPS, cliente en PC, §2):
+Resultado (igual en los 4 scripts salvo el cargador de arranque, los substituters y la tailnet: servidor en VPS, cliente en PC, §2):
 
 - `let nixProfileName = "<perfil>"; username = "<usuario>"; … in` antes del attribute set: los valores ingresados al instalar. En VPS, también `headscaleDomain = "<dominio>"; headscaleIp = "<ip>";` (con dominio, `headscaleIp` queda vacío; en modo solo IP, `headscaleDomain` queda vacío). En PC, también `diskName = "<disco>";`. `update` usa `nixProfileName` como `#<perfil>` (§6.4); el resto del archivo usa `username`, `headscaleDomain`, `headscaleIp` y `diskName` (§6.3).
 - `imports = [ ./hardware-configuration.nix ];`
-- `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/${diskName}"`). **También en los scripts GPT** (P2).
+- Cargador de arranque (§2, punto 4):
+  - `install-msdos.sh` e `install-msdos-pc.sh`: `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/${diskName}"`), con `#efiSupport = true;` y `#efiInstallAsRemovable = true;` comentados (GRUB solo BIOS).
+  - `install-gpt.sh`: `boot.loader.grub = { enable = true; device = "nodev"; efiSupport = true; efiInstallAsRemovable = true; }` (GRUB solo UEFI, en la ESP montada en `/boot`; sin `canTouchEfiVariables`, se instala como "removable" en `EFI/BOOT/BOOTX64.EFI`).
+  - `install-gpt-pc.sh`: `boot.loader.limine = { enable = true; biosSupport = true; biosDevice = "/dev/${diskName}"; efiSupport = true; }` (R5). Con Limine, NixOS desactiva GRUB solo (`boot.loader.grub.enable = lib.mkDefault false`).
 - `boot.kernelPackages = pkgs.linuxPackages_latest;`
 - `boot.tmp.cleanOnBoot = true;`
-- `nix.settings`: `experimental-features = [ "nix-command" "flakes" ]`, `max-jobs = "auto"`, `substituters = [ cache.nixos.org, nix-community.cachix.org ]` (P3).
+- `nix.settings`: `experimental-features = [ "nix-command" "flakes" ]`, `max-jobs = "auto"`, `substituters = [ cache.nixos.org, nix-community.cachix.org ]` en VPS (P3); en PC, solo `cache.nixos.org` (el otro está comentado desde `f35753d`).
 - `networking.hostName = "nixos";`, `networking.networkmanager.enable = true;`
 - `time.timeZone = "America/Argentina/Buenos_Aires";`
 - `users.users.<username>`: `isNormalUser = true`, `extraGroups = [ "wheel" "docker" ]` (P9), `packages = [ tree ]`.
 - `security.sudo.extraRules`: `<username>` puede ejecutar `ALL` con `NOPASSWD`.
-- `environment.systemPackages`: `git`, `vim`, `tailscale`, `createKeys` y `update` (`writeShellScriptBin`), más `tailnet-key` en VPS o `connect-tailnet` en PC (también `writeShellScriptBin`). En VPS, el módulo de headscale agrega además el paquete `headscale` (la CLI de administración, con `sudo`).
+- `environment.systemPackages`: `git`, `vim`, `tailscale`, `createKeys` y `update` (`writeShellScriptBin`), más `tailnet-key` en VPS o `connect-tailnet` en PC (también `writeShellScriptBin`). En `install-gpt-pc.sh`, `tailscale` y `connect-tailnet` están comentados (`f1fcd62`); el comando `tailscale` existe igual porque `services.tailscale` agrega el paquete. En VPS, el módulo de headscale agrega además el paquete `headscale` (la CLI de administración, con `sudo`).
 - `environment.shellAliases.connect-repo = "createKeys";`
 - `services.headscale` (solo VPS): `port = 8080`; con dominio, `address = "127.0.0.1"` y `settings.server_url = "https://${headscaleDomain}"`; sin dominio, `address = "0.0.0.0"` y `settings.server_url = "http://${headscaleIp}:8080"` (el puerto sale de `config.services.headscale.port`); `settings.dns = { magic_dns = true; base_domain = "tailnet.internal"; override_local_dns = false; }` (§3, Fase 2b).
 - `services.caddy` (solo VPS y solo con dominio, `lib.mkIf (headscaleDomain != "")`): `virtualHosts.${headscaleDomain}` con `reverse_proxy 127.0.0.1:<puerto de headscale>` y HTTPS automático.
@@ -237,7 +251,7 @@ Este repo **no** contiene la configuración final; `update` la trae de otro repo
 3. Tolerar `--impure`: se evalúa con `-I hardware=/etc/nixos/hardware-configuration.nix`, así que puede importar el hardware con `<hardware>` o con la ruta absoluta `/etc/nixos/hardware-configuration.nix`.
    - `update` también pasa el disco de instalación como **variable de entorno**: `sudo DISK=/dev/<disco> nixos-rebuild …` (en PC, el `diskName` ingresado al instalar; en VPS, `/dev/vda`). El flake lo lee con `builtins.getEnv "DISK"`: es un string común con la ruta completa (`"/dev/sda"`), se puede interpolar normalmente (`"${disk}"`) y, si no está definido (por ejemplo, con un `nixos-rebuild` hecho a mano), devuelve `""` en vez de fallar. Ejemplo: `boot.loader.grub.device = let d = builtins.getEnv "DISK"; in if d != "" then d else "/dev/vda";`. Funciona porque `update` usa `--impure` (sin eso, `getEnv` siempre da `""`) y porque `nixos-rebuild` evalúa el flake con `nix build` heredando el entorno (verificado en el código de `nixos-rebuild-ng`: solo `switch-to-configuration` corre con entorno restringido). `sudo DISK=…` está permitido porque la regla de sudo del usuario es `ALL` (implica `SETENV`). Antes de `5bc319e` se pasaba como `disk=$diskName` suelto y `update` fallaba en PC; se descartó `-I disk=…` porque lo convierte en un *path* de Nix (interpolarlo intentaría copiar `/dev/<disco>` al store) y, si falta, la evaluación falla.
 4. `--no-write-lock-file` y `--refresh`: siempre toma el último commit de la rama por defecto (o de la rama que se ingrese en `update`, §6.7) y no escribe `flake.lock` (que conviene tener commiteado en ese repo).
-5. Definir el bootloader correcto para el disco (p. ej. GRUB en `/dev/vda` en Upcloud), el usuario creado (con `wheel` y sudo, o `update` dejará de funcionar) y el endurecimiento de seguridad.
+5. Definir el bootloader correcto para el disco (p. ej. GRUB en `/dev/vda` en Upcloud; las PCs GPT se instalan con Limine, así que para esas el flake tiene que declarar Limine o pasar a otro cargador sabiendo que el de la instalación queda en el disco), el usuario creado (con `wheel` y sudo, o `update` dejará de funcionar) y el endurecimiento de seguridad.
 6. Si usa `users.mutableUsers = false`, las contraseñas puestas por el instalador con `chpasswd` se pierden: tiene que declararlas (`hashedPassword`, etc.).
 7. Si no incluye `createKeys`/`update`, esos comandos desaparecen tras el primer reinicio. Si copia su código, tiene que definir `nixProfileName` (o reemplazar `${nixProfileName}` por el nombre del perfil): sin eso, la evaluación falla.
 8. **Tailnet:** si no incluye `services.headscale`, `services.caddy` (si se instaló con dominio) y `services.tailscale` con los mismos valores (sobre todo el mismo `server_url`, porque todos los dispositivos quedan registrados contra esa URL; en modo solo IP, también `address = "0.0.0.0"`), la tailnet se cae tras el reinicio de `connect-repo`. Los datos (`/var/lib/headscale`, `/var/lib/tailscale`) quedan en el disco, así que se recupera volviendo a declararla. Si copia `tailnet-key` o `tailnet-join`, tiene que definir `username`, `headscaleDomain` y `headscaleIp` (o reemplazarlos), igual que con `nixProfileName`. En las PCs alcanza con `services.tailscale.enable = true`: la sesión en la tailnet vive en `/var/lib/tailscale` y sobrevive al cambio de configuración (`connect-tailnet` no usa variables del `let`, así que se puede copiar tal cual).
@@ -253,13 +267,13 @@ Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor pa
 - Todo cambio que no sea específico de MBR/GPT o de VPS/PC se aplica **en los 4 scripts**.
 - Para verificar la paridad después de editar (`diff` solo compara texto y no ejecuta nada de los scripts: es de lo poco que se puede correr en el host, §10.1):
   ```bash
-  diff install-mbr.sh install-gpt.sh                # solo debe diferir el particionado
-  diff install-mbr.sh install-mbr-for-pc.sh         # diskName, tamaños de swap, espacios y la tailnet (servidor en VPS, cliente en PC, §2)
-  diff install-gpt.sh install-gpt-for-pc.sh         # ídem
-  diff install-mbr-for-pc.sh install-gpt-for-pc.sh  # solo el particionado
+  diff install-msdos.sh install-gpt.sh              # el particionado y el bloque de GRUB: BIOS vs UEFI (§2, punto 4)
+  diff install-msdos.sh install-msdos-pc.sh         # diskName, swap, cargador de arranque, substituters, clear, espacios y la tailnet (§2)
+  diff install-gpt.sh install-gpt-pc.sh             # ídem
+  diff install-msdos-pc.sh install-gpt-pc.sh        # el particionado, el cargador de arranque y lo de §2, punto 7
   ```
-  Referencia al `a64e250`: `diff install-mbr.sh install-gpt.sh | grep -c '^[<>]'` da **18** líneas. Si da más, se rompió la paridad. Al 2026-11-19 (con los cambios de headscale), `install-mbr.sh` vs `install-gpt.sh` y `install-mbr-for-pc.sh` vs `install-gpt-for-pc.sh` dan **20** cada uno (las 2 de más vienen de `76fe019`, ver `CHANGELOG.md`). Entre VPS y PC la diferencia es grande a propósito (la tailnet): ahí revisá a ojo que solo difieran las partes de §2.
-- Si una diferencia nueva es intencional, documentala en §2.
+  Contá las líneas con `diff a b | grep -c '^[<>]'` y comparalas con los valores de referencia de [`STATUS.md` §3](STATUS.md#3-paridad-actual): si da más sin un cambio intencional, se rompió la paridad. Entre VPS y PC la diferencia es grande a propósito (la tailnet y el cargador de arranque): ahí revisá a ojo que solo difieran las partes de §2.
+- Si una diferencia nueva es intencional, explicala en §2 y actualizá el valor de referencia en `STATUS.md` §3.
 - La paridad ya se perdió antes: entre `da9847c` y `c3cb08a`, `install-gpt.sh` conservó un alias `update` viejo (con `switch`) que tapaba al binario `update`.
 
 ### Estilo
@@ -279,40 +293,31 @@ Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor pa
   - `cdee6e6` dice *remove StrictHostKeyChecking* pero lo **agrega** al comando `ssh` del README.
   - `c3cb08a` dice *Add clean on reboot* pero `tmp.cleanOnBoot` existía desde el primer script; lo que hace es **dividir el heredoc** en dos.
   - `a9f0198` dice *for consistency* pero cambia la semántica: habilita la interpolación en el heredoc (y rompe `createKeys` hasta `c3cb08a`).
-  - `ab58750` dice *Remove duplicate terminal clear* pero **mueve** el `clear` al principio del script; `a64e250` vuelve a agregar otro antes de los prompts, así que hoy hay dos.
+  - `ab58750` dice *Remove duplicate terminal clear* pero **mueve** el `clear` al principio del script; `a64e250` vuelve a agregar otro antes de los prompts, así que hay dos (en PC, el segundo está comentado desde el 2026-11-22).
+  - `f1fcd62` dice *Disable Tailscale connection* pero además **cambia GRUB por Limine** en `install-gpt-for-pc.sh`.
+  - `9884e52` y `dda3702` dicen *Add installation scripts…* pero solo **renombran** scripts (y actualizan el README).
+  - `b1967d6` dice *fix: update DISK variable documentation*, pero deja el comentario mal: dice *"e.g. sda"* y el valor es `/dev/sda`.
+  - Los mensajes genéricos *"Update install-gpt-for-pc.sh"* (`12287c9`, `fbc27d9`) no dicen qué cambian: ver `CHANGELOG.md`.
 
 ### Documentación
 
 - Todo cambio va en `CHANGELOG.md`, **arriba de todo** (§13).
+- Si cambia el **estado** (algo se probó, apareció o se corrigió un problema o un riesgo, cambió la paridad, se decidió algo pendiente), actualizá `STATUS.md` en el mismo cambio.
 - Si cambia algo visible para el usuario, actualizá `README.md`.
-- Si cambia la estructura, el flujo o un problema conocido, actualizá este archivo (incluida la línea "Revisado el … contra el commit …" del encabezado).
+- Si cambia la **descripción** del proyecto (la estructura, el flujo, una mecánica, una convención o una decisión de diseño), actualizá este archivo, incluida la línea "Revisado el … contra el commit …" del encabezado.
 
 ---
 
-## 9. Problemas conocidos
+## 9. Problemas conocidos, riesgos y estado: en `STATUS.md`
 
-Detectados leyendo el código al 2026-11-07 (`a64e250`). **No están corregidos.** No los arregles sin que el usuario lo pida, pero tenelos en cuenta (y, si corregís uno, sacalo de esta tabla y anotalo en `CHANGELOG.md`). Los arreglos sugeridos (acá y en los riesgos) son cambios **al texto de los scripts**, no comandos para ejecutar en el host.
+El estado del proyecto cambia casi tan seguido como el `CHANGELOG.md`, así que no vive en este archivo, sino en [`STATUS.md`](STATUS.md):
 
-| ID | Problema | Dónde | Detalle / arreglo sugerido |
-|---|---|---|---|
-| P1 | **La contraseña de root nunca se establece** | 4 scripts, `echo "$passwordRoot" \| nixos-install` | `nixos-install` solo pide la contraseña de root si stdin es una terminal (`if [[ -z $noRootPasswd ]] && [ -t 0 ]`, verificado en el código de `nixos-install`). Con un pipe se saltea ese paso y root queda sin contraseña (bloqueado). El acceso funciona igual por el usuario con sudo. Arreglo: `nixos-install --no-root-passwd` y después `echo "root:$passwordRoot" \| chpasswd -R /mnt`. |
-| P2 | **Los scripts GPT instalan GRUB en modo BIOS** | `install-gpt.sh`, `install-gpt-for-pc.sh` | `boot.loader.grub.device = "/dev/…"` sin `efiSupport` en un disco GPT sin partición `bios_grub`: casi con seguridad `grub-install` falla y, aunque no fallara, un firmware UEFI no lo arrancaría. La ESP se crea y se monta pero no se usa. Originalmente (`daac08f`) usaban `systemd-boot` + `efi.canTouchEfiVariables`; se reemplazó en `4fa0101` al copiar el bloque de MBR. |
-| P3 | El cache `nix-community.cachix.org` no se usa | 4 scripts, `nix.settings` | Se agrega a `substituters` pero sin su clave en `trusted-public-keys`, así que Nix rechaza esos binarios. Agregar la clave pública que publica nix-community.cachix.org o quitar el substituter. |
-| P4 | Las contraseñas se ven en pantalla | 4 scripts, prompts | `read -rp` sin `-s` y sin confirmación. El `-s` existía (`da5a8f7`) y se perdió al pasar a `/dev/tty` (`7fb73bd`). |
-| P5 | Sin manejo de errores | 4 scripts | No hay `set -euo pipefail`: si falla `parted`/`mkfs`/`mount`/`nixos-install`, el script sigue igual y termina en `poweroff`. (Lo único que revisa un resultado es `createKeys`, que no reinicia si `update` falla.) |
-| P6 | Nombres de partición incompatibles con NVMe/eMMC | scripts PC | `/dev/$diskName"1"` da `nvme0n1` + `1` = `nvme0n11` en vez de `nvme0n1p1`. |
-| P7 | Entradas sin validar | 4 scripts + `createKeys`/`update` | `username` vacío o con caracteres raros (p. ej. `.`, `"`) rompe el `let` o `users.users.${username}` en Nix. `diskName` no se verifica antes de borrar el disco. Un `nixProfile` con `"`, `\` o `${` rompe el `configuration.nix` (y `nixos-install` falla); si no coincide con ningún `nixosConfigurations.<perfil>` del flake, falla `update`. La URL del repo solo funciona en formato scp (`git@github.com:usuario/repo.git`): una URL HTTPS o `ssh://…:22/…` queda mal porque se reemplazan **todos** los `:`. La rama que pide `update` tampoco se valida: si no existe en el repo, falla el fetch, y un nombre con caracteres que significan algo en una URL (`#`, `&`, `%`) arma una URL inválida. En VPS, `headscaleDomain` no se valida (solo se le sacan `http://`, `https://` y la `/` final): un dominio que no apunta a la máquina deja a Caddy sin certificado (la máquina se une igual a su tailnet, pero los demás dispositivos no pueden conectarse); una IP o un `host:puerto` escritos ahí no activan el modo solo IP, sino que arman un `https://…` que no funciona; y uno con `"` o `${` rompe el `configuration.nix`. `headscaleIp` tampoco se valida (solo que no quede vacía): si la detección falla o la máquina está detrás de NAT, hay que escribir la IP pública a mano. Para headscale, el usuario de Linux además tiene que tener al menos 2 caracteres y empezar con una letra; si no, `tailnet-join` y `tailnet-key` fallan al crear el usuario de headscale. En PC, `connect-tailnet` solo verifica que la URL y la clave no estén vacías: una URL mal escrita la detecta `tailscale up` (falla o vence el `--timeout 2m`). |
-| P8 | Comentarios desactualizados o engañosos | 4 scripts | *"here a 8GB one is created"* (la swap es de 1 GB o 2 GB); la ESP dice *512MiB* pero se crea con `512MB`; el primer `clear` (antes de `sudo -i`) tiene el comentario *"before proceeding with user setup"*, que solo es cierto para el segundo; *"Installation of NixOS and setting 'root' password"* (no se aplica, P1). Cosmético: la línea `tmp.cleanOnBoot` está indentada con tabs. |
-| P9 | Grupo `docker` sin Docker | 4 scripts | `extraGroups` incluye `docker` pero Docker no se habilita (se espera del flake). |
-| P10 | README desactualizado o incompleto | `README.md` | El paso 3 dice *"con usuario 'nixi'"* (el usuario se elige al instalar desde `fdf1bc5`/`b83b24e`); la sección de PCs no explica los pasos posteriores (`connect-repo` también existe en PC); no advierte que los scripts borran el disco sin preguntar ni que solo deben correrse desde el ISO live. (El *"(Opción 1)"* repetido en PCs se corrigió en `b4f632f`.) |
-### Riesgos sin verificar (comprobar en VM antes de asumirlos)
+- qué script funciona y qué está probado (y con qué commit);
+- qué falta probar y qué decisiones están pendientes;
+- los valores de referencia de la paridad (§8);
+- los problemas conocidos (**P1**, **P2**, …), los riesgos sin verificar (**R1**, **R2**, …) y los ya corregidos.
 
-| ID | Riesgo |
-|---|---|
-| R1 | `createKeys` escribe `/root/.ssh/config` **antes** de que exista `/root/.ssh` (lo crea recién `ssh-keygen`). En un sistema limpio el `tee` podría fallar, y `git+ssh` no usaría la deploy key (en un segundo intento sí, porque el directorio ya existe). Mitigación posible: `sudo mkdir -p -m 700 /root/.ssh` al principio. |
-| R2 | Ejecutar `connect-repo` por segunda vez: `ssh-keygen` pregunta si sobrescribir la clave, pero su salida va a `/dev/null`, así que parece colgado. |
-| R3 | En discos con datos previos (más probable en PC), `parted`/`mkfs` pueden pedir confirmación leyendo de stdin, que es el propio script (§6.2). Opciones: `parted -s`, `mkfs.ext4 -F`. |
-| R4 | `system.stateVersion = "26.11"` está fijo. Al 2026-11-07 la estable es **26.05** y 26.11 es *unstable* (sin release todavía), así que el valor coincide con un ISO unstable. Si se instala con el ISO estable, debería ser `"26.05"`. Revisarlo cada vez que se cambie de ISO. |
+Los IDs `P…` y `R…` que aparecen en este archivo y en el `CHANGELOG.md` están definidos ahí, y nunca se renumeran ni se reutilizan. Leé `STATUS.md` antes de tocar los scripts, y actualizalo en el mismo cambio cuando algo se pruebe, se rompa o se corrija (sus reglas están en su §7).
 
 ---
 
@@ -363,7 +368,7 @@ Alternativa sin Nix (otra máquina): un contenedor **rootless**, sin red y con e
 podman run --rm --network=none -v "$PWD":/src:ro -w /src docker.io/library/bash:5 \
   bash -c 'for f in install-*.sh; do bash -n "$f" && echo "bash -n OK: $f"; done'
 podman run --rm --network=none -v "$PWD":/src:ro -w /src docker.io/koalaman/shellcheck:stable \
-  install-gpt-for-pc.sh install-gpt.sh install-mbr-for-pc.sh install-mbr.sh
+  install-gpt-pc.sh install-gpt.sh install-msdos-pc.sh install-msdos.sh
 ```
 
 Nunca uses `--privileged`, `--device` ni montes `/dev` o discos del host. Preferí `podman` rootless: Docker con el grupo `docker` equivale a root en el host.
@@ -374,7 +379,7 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 
 - **Disco:** una imagen de disco nueva y vacía (p. ej. qcow2), creada para la prueba. Nunca le pases a la VM un disco, una partición o un volumen real del host (`/dev/sdX`, `/dev/nvme…`, LVM), ni passthrough de controladoras USB/PCI: el script lo borraría. Los scripts de VPS usan `/dev/vda` fijo, así que el disco de la VM tiene que ser virtio.
 - **Sin carpetas compartidas** con el host (virtiofs, 9p): dentro de la VM los scripts corren como root.
-- **ISO y firmware:** el ISO de NixOS que coincida con `stateVersion` (R4). BIOS para los scripts MBR; UEFI (OVMF) para los GPT (que hoy no arrancan, P2).
+- **ISO y firmware:** el ISO de NixOS que coincida con `stateVersion` (R4). BIOS para los scripts MSDOS; UEFI (OVMF) para los GPT. Qué probar primero: `STATUS.md` §2. En los scripts de PC conviene probar también con un disco SATA (`sda`) y no solo virtio: con `vda`, un `/dev/vda` copiado por error de los scripts de VPS funcionaría por casualidad.
 - **Dónde se ejecuta:** el `curl … | bash` (o la URL raw de una rama de prueba, §8) se escribe **en la consola de la VM**. Antes de pegarlo, confirmá que la ventana activa es la de la VM y no una terminal del host. En los scripts de PC, el disco que se ingresa es el de la VM (verificalo con `lsblk` dentro de la VM).
 - **El Nix generado se valida acá:** si `nixos-install` termina sin errores, el `configuration.nix` evaluó y se construyó.
 - **`connect-repo`/`update`:** se prueban dentro de la VM ya instalada, con un repo de prueba o con una deploy key que después borres de GitHub.
@@ -400,7 +405,7 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | Tailnet propia: headscale detrás de Caddy, en `127.0.0.1:8080` | `efdcedd` | Caddy saca y renueva el certificado HTTPS solo, sin pedir email (con `security.acme` de NixOS habría que poner uno, y sería un dato personal en el repo). La máquina se une a su tailnet por `http://127.0.0.1:8080`, que funciona en los dos modos aunque el certificado todavía no exista. |
 | Modo solo IP (dominio vacío): headscale por HTTP en `0.0.0.0:8080`, sin Caddy | `efdcedd` | Pedido del dueño, para usar headscale sin dominio. Es la alternativa no recomendada (riesgos en §3, Fase 2b); el instalador lo avisa. En el `let` se guardan solo los valores ingresados (`headscaleDomain`, `headscaleIp`) y la URL se arma en el bloque 2. |
 | La máquina se une a su tailnet sola (`tailnet-join`), con una pre-auth key creada en el momento | `efdcedd` | Pedido del dueño: el servidor tiene que quedar como nodo de la tailnet sin pasos manuales. La clave se genera y se usa en la misma máquina (un solo uso, 10 minutos): no se muestra, no se guarda y no pasa por el instalador. |
-| Servidor headscale solo en los scripts de VPS; las PCs son clientes con `connect-tailnet` | `efdcedd` (VPS), sin commitear (`connect-tailnet`) | Decisión del dueño: el servidor de coordinación va en el VPS (IP pública, siempre encendido). `connect-tailnet` sigue el estilo de `connect-repo` (se corre después del primer arranque) y la clave no se guarda en disco ni se pide durante la instalación, donde podría vencer antes del primer arranque. |
+| Servidor headscale solo en los scripts de VPS; las PCs son clientes con `connect-tailnet` | `efdcedd` (VPS), `856fe37` (`connect-tailnet`; comentado en `install-gpt-pc.sh` desde `f1fcd62`) | Decisión del dueño: el servidor de coordinación va en el VPS (IP pública, siempre encendido). `connect-tailnet` sigue el estilo de `connect-repo` (se corre después del primer arranque) y la clave no se guarda en disco ni se pide durante la instalación, donde podría vencer antes del primer arranque. |
 | Disco al flake como variable de entorno `DISK` (en los 4 scripts) | `5bc319e` (PC), `efdcedd` (VPS) | Llega como string con `builtins.getEnv "DISK"`, se interpola sin riesgo y no rompe la evaluación si falta (§7). |
 | `tailnet-key` para sumar otros dispositivos | `efdcedd` | Generar una clave de un solo uso y el comando exacto para el dispositivo nuevo, sin tener que recordar la CLI de headscale (en la 0.29, `preauthkeys create --user` pide el ID numérico del usuario, no el nombre). |
 | Deploy key sin passphrase (`-N ""`) | `6d2bf39` | Que `nixos-rebuild` como root pueda clonar sin intervención. |
@@ -408,13 +413,15 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | Usuario elegido al instalar (antes fijo: `nixi`) | `fdf1bc5`, `b83b24e` | Reutilizar los scripts con cualquier usuario. |
 | Salida de particionado visible | `2315432` → `dd212b7` | Se ocultó y se revirtió a los 3 minutos: ver la salida ayuda a detectar errores (no hay manejo de errores, P5). |
 | `configuration.nix` mínimo | `183c8b6`, `3b8644c` | Solo lo necesario para el primer acceso; el resto va en el flake. |
-| `clear` antes de los prompts de usuarios | `dd212b7`, `a64e250` | Que los prompts de contraseñas no queden mezclados con la salida de `parted`/`mkfs`. |
+| `clear` antes de los prompts de usuarios | `dd212b7`, `a64e250` | Que los prompts de contraseñas no queden mezclados con la salida de `parted`/`mkfs`. En los de PC está comentado desde `e6718da`/`12287c9` (los commits no dicen por qué). |
+| Cargador según la tabla de particiones: GRUB solo BIOS en los MSDOS, GRUB solo UEFI (`nodev`) en `install-gpt.sh`, Limine solo en `install-gpt-pc.sh` | sin commitear (2026-11-25), después de `f35753d` | Decisión del dueño. Limine solo lee particiones FAT, y los MSDOS no tienen ninguna; GRUB solo BIOS es la configuración que funcionó en Upcloud. En GPT sin partición `bios_grub`, GRUB solo puede instalarse para UEFI (P2). Los commits que pasaron `install-gpt-pc.sh` a Limine (`f1fcd62`, `f35753d`) no dicen el motivo. |
+| `parted -s` y `mkfs.ext4 -F` | `dad977e`, `f35753d`, `479bf18` | Que no pidan confirmación: leerían la respuesta de stdin, que es el propio script (§6.2, R3). |
 
 ---
 
 ## 12. Historia en breve
 
-Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `b4f632f`). Detalle en `CHANGELOG.md`.
+El desarrollo empezó el 2026-11-05: 72 commits al `b4f632f` (2026-11-07) y 98 al `479bf18` (2026-11-25). Detalle en `CHANGELOG.md`.
 
 1. **2026-11-05, mañana:** `install-mbr.sh` inicial con usuario fijo `nixi` y un `configuration.nix` completo (con comentarios por defecto, `fail2ban`, `btop`). Se agregan `createKeys` (deploy key) y un alias `update` con `bash -c` y `nixos-rebuild switch`.
 2. **2026-11-05, mediodía:** `install-gpt.sh` (con `systemd-boot`), README con los comandos `curl`.
@@ -422,7 +429,11 @@ Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `
 4. **2026-11-05, noche:** `update` como binario, URL `:` → `/`, `boot` en vez de `switch`, arreglo del heredoc anidado.
 5. **2026-11-06, mañana:** usuario elegido al instalar, división en dos heredocs, opciones `ssh` del README, scripts para PC, rediseño del README.
 6. **2026-11-06, media mañana–tarde:** paridad total entre los 4 scripts, limpieza (sin `fail2ban`/`btop`/alias extra, `PermitRootLogin = "no"`), salida visible, `clear`, README con opciones y pasos numerados.
-7. **2026-11-07:** reubicación del `clear` (hoy hay dos), esta documentación (`AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`) y el título *"(Opción 2)"* de GPT en la sección de PCs del README.
+7. **2026-11-07:** reubicación del `clear` (desde ahí hay dos), esta documentación (`AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`) y el título *"(Opción 2)"* de GPT en la sección de PCs del README.
+8. **2026-11-09 a 2026-11-11:** perfil de Nix elegido al instalar, el bloque 1 del heredoc pasa a ser solo un `let`, rama opcional en `update` y reinicio solo si `update` termina bien.
+9. **2026-11-18 y 2026-11-19:** `tailscale` en los 4, el disco al flake como `DISK`, headscale en los de VPS (servidor) y `connect-tailnet` en los de PC (clientes).
+10. **2026-11-20 a 2026-11-23:** GRUB con `efiSupport` en los 4. En `install-gpt-for-pc.sh`, una serie de pruebas: ESP de 1 GB, una partición `bios_grub` (agregada y después comentada), `parted -s` y el paso a Limine (con `tailscale` y `connect-tailnet` comentados). En PC se comenta el segundo `clear`.
+11. **2026-11-25:** Limine en los 4, renombre de los scripts (`mbr` → `msdos`, `-for-pc` → `-pc`), `parted -s` y `mkfs.ext4 -F` en los 4, y vuelta a GRUB en todos menos `install-gpt-pc.sh` (solo BIOS en los MSDOS, solo UEFI en `install-gpt.sh`).
 
 ---
 
@@ -433,6 +444,7 @@ Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `
 - Si ya existe la sección del día, agregá la entrada **arriba** dentro de esa sección.
 - Cada entrada empieza con el hash corto del commit entre backticks y un prefijo de área (`Scripts`, `README`, `Docs`). Si el cambio todavía no está commiteado, usá **(sin commitear)** en lugar del hash y reemplazalo por el hash después de commitear.
 - Describí lo que cambió **en el código**, no copies el mensaje del commit si no coincide con el diff (marcalo con ⚠️).
+- Si el cambio afecta el estado (un problema corregido, algo probado), va además en `STATUS.md`, en el mismo commit. Las reglas de ese archivo están en su §7.
 
 ---
 
@@ -442,5 +454,5 @@ Todo el desarrollo ocurrió entre el 2026-11-05 y el 2026-11-07 (72 commits al `
 2. ¿Agregaste un prompt? `read -rp … < /dev/tty` (§6.2).
 3. ¿Tocaste el `configuration.nix`? Variables de instalación → `let` del bloque 1, y en el bloque 2 se usan como variables de Nix (`${username}`, nunca `$username`); todo lo demás, incluido el código de `createKeys`/`update` → bloque 2; ninguna línea igual a `EOF`; llaves balanceadas; nada de `${…}` dentro de `'' … ''` (§6.3, §6.4).
 4. Chequeos estáticos (`bash -n` y `shellcheck`) **solo** en el sandbox de Nix o en un contenedor sin red (§10.2), nunca en el host. Si el cambio altera el comportamiento, probalo en una VM descartable (§10.3).
-5. `CHANGELOG.md` arriba de todo; `README.md` si cambia algo visible; este archivo si cambia el flujo, la estructura o un problema conocido.
+5. `CHANGELOG.md` arriba de todo; `STATUS.md` si cambia el estado (probado, problemas, riesgos, paridad); `README.md` si cambia algo visible; este archivo solo si cambia la descripción del proyecto (flujo, estructura, mecánicas, convenciones, decisiones).
 6. Commit en inglés, imperativo. Para cambios no triviales, rama + prueba en VM antes de `main` (§8, §10).

@@ -114,11 +114,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
     ];
 
   boot = {
-    loader.limine = {
+    loader.grub = {
       enable = true;
-	    biosSupport = true;
-      biosDevice = "/dev/vda";
-      efiSupport = true;
+      device = "/dev/vda";
+      #efiSupport = true;
+      #efiInstallAsRemovable = true;
     };
 
     kernelPackages = pkgs.
@@ -134,7 +134,7 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
         max-jobs = "auto"; # "auto"
         substituters = [
             "https://cache.nixos.org"
-            "https://nix-community.cachix.org"  # si usas paquetes community
+            #"https://nix-community.cachix.org"  # si usas paquetes community
         ];
     };
 
