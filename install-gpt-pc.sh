@@ -83,6 +83,7 @@ let
   nixProfileName = "$nixProfile";
   username = "$username";
   diskName = "$diskName";
+  limine = pkgs.limine.override { targets = [ "i686" "x86_64" ]; };
 in
 EOF
 
@@ -99,6 +100,11 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
 	    biosSupport = true;
       biosDevice = "/dev/${diskName}";
       efiSupport = true;
+      #
+      package = limine;
+      additionalFiles = {
+        "EFI/BOOT/BOOTIA32.EFI" = "${limine}/share/limine/BOOTIA32.EFI";
+      };
     };
 
     kernelPackages = pkgs.
