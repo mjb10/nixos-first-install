@@ -230,8 +230,8 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   boot = {
     loader.limine = {
       enable = true;
-	    biosSupport = true;
-      biosDevice = "/dev/${diskName}";
+	    #biosSupport = true;
+      #biosDevice = "/dev/${diskName}";
       efiSupport = true;
       #
       package = limine;
