@@ -187,11 +187,11 @@ parted -s /dev/$diskName -- mkpart root ext4 1024MB -2GB
 parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
 
 # Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It uses the space reserved at the start of the disk (about 1 GB). On the EXO, the 32-bit UEFI firmware starts Limine from EFI/BOOT/BOOTIA32.EFI on this partition (D-64).
-parted -s /dev/$diskName -- mkpart ESP fat32 2MB 1024MB
+parted -s /dev/$diskName -- mkpart ESP fat32 1MB 512MB
 parted -s /dev/$diskName -- set 3 esp on
 
 # BIOS boot partition: the EXO does not use it (UEFI only); it stays for PCs with BIOS, like nixos-ferchu's biosSupport = true
-parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
+parted -s /dev/$diskName -- mkpart BIOS 512MiB 1024MiB
 parted -s /dev/$diskName -- set 4 bios_grub on
 
 #Formatting
