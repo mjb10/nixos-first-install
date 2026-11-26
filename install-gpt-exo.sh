@@ -191,8 +191,8 @@ parted -s /dev/$diskName -- mkpart ESP fat32 1MB 1024MB
 parted -s /dev/$diskName -- set 3 esp on
 
 # BIOS boot partition: the EXO does not use it (UEFI only); it stays for PCs with BIOS, like nixos-ferchu's biosSupport = true
-#parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
-#parted -s /dev/$diskName -- set 4 bios_grub on
+parted -s /dev/$diskName -- mkpart BIOS 1MiB 2MiB
+parted -s /dev/$diskName -- set 4 bios_grub on
 
 #Formatting
 mkfs.ext4 -F -L nixos "${part}1"
@@ -230,8 +230,8 @@ tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
   boot = {
     loader.limine = {
       enable = true;
-	    #biosSupport = true;
-      #biosDevice = "/dev/${diskName}";
+	    biosSupport = true;
+      biosDevice = "/dev/${diskName}";
       efiSupport = true;
       #
       package = limine;
