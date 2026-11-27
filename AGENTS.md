@@ -4,7 +4,7 @@
 > `CLAUDE.md` es solo un alias que importa este archivo: **editá siempre `AGENTS.md`**, nunca `CLAUDE.md`.
 > Este archivo **describe** el proyecto y cambia poco. El **estado** (qué funciona, qué está probado, problemas, riesgos y correcciones) está en [`STATUS.md`](STATUS.md), que cambia casi tan seguido como el historial.
 > Historial detallado commit por commit: [`CHANGELOG.md`](CHANGELOG.md) (lo más nuevo arriba).
-> Revisado el **2026-11-26** contra el commit **`9bbd37d`** más los cambios sin commitear de `install-gpt-exo.sh` (borrado previo de discos, microSD para archivos e instalación desde el flake; ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log 9bbd37d..HEAD -p`) antes de confiar ciegamente en este documento.
+> Revisado el **2026-11-27** contra el commit **`1a13cba`** más dos cambios sin commitear en `install-gpt-exo.sh`: la corrección de P13 (espera a udev y cortes por error en el particionado, el formateo y el montaje) y la reanudación de una corrida anterior (ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log 1a13cba..HEAD -p`) antes de confiar ciegamente en este documento.
 
 ---
 
@@ -72,6 +72,7 @@ Es para la EXO Wings K1322 (2 en 1, Intel Bay Trail Z3735F, 2 GB de RAM, eMMC de
 - **Todas las preguntas antes de tocar los discos:** la contraseña de root (dos veces, con `ask_password`), el perfil de Nix, la deploy key y la URL del repo con su rama, que se comprueban con `git ls-remote`.
 - **No escribe `configuration.nix`** (no hay heredocs ni `let`) **y no crea usuarios:** instala con `nixos-install --flake` y el sistema entero sale del flake (§7.1). Solo pone la contraseña de root, con `chpasswd`.
 - **Errores:** con `fail()`/`cancel()`, que muestran el mensaje y cortan sin apagar (y vacían el resto del script que llega por stdin). `nixos-install` se puede reintentar.
+- **Reanudación:** si el disco elegido ya tiene las 4 particiones que crea el script (`has_install_layout`: GPT con los nombres `root`, `swap`, `ESP` y `BIOS`, en ese orden), volver a correrlo ofrece `YES` para seguir sobre ellas o `ERASE` para borrar y empezar de cero. Con `YES` (`resume=1`): no borra ni particiona, formatea solo las particiones que no tienen todavía su sistema de archivos (`format_part`, con `blkid -p`) y vuelve a correr `nixos-install`, que reutiliza lo que ya está en el store y en la caché de `/mnt`. Las preguntas se repiten siempre; la deploy key se reutiliza si sigue la misma sesión del live. Antes de montar, borra lo que una corrida vieja haya dejado en `/mnt` cuando no era un montaje (en la RAM del live).
 - **Particionado propio** (§4).
 
 ### Documentación
@@ -157,8 +158,8 @@ Reemplaza las fases 1 a 3: no hay sistema mínimo ni `connect-repo`.
    - contraseña de root y perfil de Nix;
    - la deploy key: se escribe `/root/.ssh/config` en el live y se crea la clave (o se reutiliza si ya existe en la misma sesión), y se muestra para cargarla en GitHub;
    - la URL SSH del repo (formato scp; la https se rechaza) y la rama. Se comprueban con `git ls-remote --exit-code`, y si fallan vuelve a preguntar.
-2. **Disco:** lo detecta, muestra la lista, pide `YES` y ofrece borrar los otros discos.
-3. **Borrado y particionado:** `umount -R /mnt`, `release_disk` y `wipe_disk` de cada disco; `files_disk` de los discos extra; después particiona, formatea, monta y activa la swap.
+2. **Disco:** lo detecta, muestra la lista, pide `YES` y ofrece borrar los otros discos. Si el disco ya tiene las particiones de una corrida anterior, pide `YES` para seguir sobre ellas o `ERASE` para borrarlo (§2, "Reanudación").
+3. **Borrado y particionado:** `umount -R /mnt`, `release_disk` y `wipe_disk` de cada disco (menos el de instalación, si se sigue una corrida anterior); `files_disk` de los discos extra; después particiona (salvo al seguir), espera a udev, formatea (al seguir, solo lo que falta), vacía `/mnt` si quedó algo en la RAM, monta y activa la swap.
 4. **Hardware:** `nixos-generate-config --root /mnt --show-hardware-config` escribe solo `/mnt/etc/nixos/hardware-configuration.nix`. Se copia también a `/etc/nixos/` del live.
 5. **Instalación:** `XDG_CACHE_HOME=/mnt/.install-cache DISK=<disco> nixos-install --flake "git+ssh://<url>[?ref=<rama>]#<perfil>" --impure -I hardware=/mnt/etc/nixos/hardware-configuration.nix --no-channel-copy --no-root-passwd --max-jobs 1 < /dev/null`. Las cachés de Nix van al disco nuevo y no a la RAM del live (los temporales ya los pone ahí `nixos-install`). Si falla: Enter reintenta, otro nombre prueba con ese perfil y `STOP` corta.
 6. **Al final:**
@@ -185,6 +186,7 @@ Motivo (pedido del dueño, 2026-11-26): con el camino de los 4 scripts, la prime
 - Los scripts MSDOS **no tienen ninguna partición FAT**: `/boot` queda dentro de la ext4. Por eso usan GRUB solo BIOS: Limine solo lee particiones FAT (se usó desde `f35753d` y se revirtió el 2026-11-25).
 - `install-gpt-pc.sh` tiene una partición 4 BIOS boot (`1MiB` → `2MiB`, flag `bios_grub`). Se agregó en `17ecf14` para GRUB en modo BIOS sobre GPT, se comentó después y está activa de nuevo desde `f50b589`; Limine no la usa explícitamente (sin `partitionIndex`, R5). `install-gpt.sh` no tiene.
 - En `install-gpt-exo.sh`, la ESP y la partición BIOS ocupan el primer GiB, y root arranca justo donde termina la BIOS. Las unidades importan: `1024MB` son 976,6 MiB, y con eso root se superponía con la BIOS (P12, corregido usando `1024MiB`).
+- En `install-gpt-exo.sh`, entre el último `parted` y el primer `mkfs` hay `udevadm settle` y una espera a que existan las 4 particiones: cada vez que `parted` cierra el disco, udev vuelve a leer la tabla y los `/dev/<disco>p*` pueden desaparecer un momento (P13). Si falla el particionado, el formateo o el montaje, el script corta con `fail`: sin root montado, `/mnt` es la RAM del live.
 - Dispositivos: VPS usa `/dev/vda1..3`; PC usa `/dev/$diskName"1"..` (no sirve para NVMe/eMMC, P6); `install-gpt-exo.sh` agrega `p` si el nombre del disco termina en dígito (`/dev/mmcblk1p1`).
 - Desde el 2026-11-25, los 4 usan `parted -s` (modo script: nunca pide confirmación) y `mkfs.ext4 -F` (formatea aunque haya un sistema de archivos previo). Con eso se resolvió R3.
 
@@ -478,6 +480,7 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | `install-gpt-exo.sh` instala con `nixos-install --flake`, sin `configuration.nix` intermedio | sin commitear (2026-11-26) | Pedido del dueño: que la primera generación ya sea la del repo y no ocupe espacio de más (con el camino viejo, ~11 GB de basura después de `connect-repo`). Para lo mismo: `--no-channel-copy`, cachés de Nix en `/mnt` (los 2 GB de RAM del live) y `nix-collect-garbage` antes de apagar. |
 | Deploy key y comprobación del repo (`git ls-remote`) antes de borrar | sin commitear (2026-11-26) | Que una URL, una rama o una clave mal puestas aparezcan antes de tocar los discos. Es lo que hacía `connect-repo`, ahora dentro del instalador. |
 | El script de la EXO no crea usuarios | sin commitear (2026-11-26) | Decisión del dueño: los usuarios (mutables) salen del flake; el script solo pone la contraseña de root. |
+| Volver a correr `install-gpt-exo.sh` sigue la instalación anterior (`has_install_layout`, `format_part`), con `ERASE` para empezar de cero | sin commitear (2026-11-27) | Pedido del dueño, después de P13: que una corrida cortada por un error no obligue a borrar y particionar de nuevo. Se detecta por el estado del disco (los nombres de las particiones y `blkid`), no por un archivo de estado: sirve también después de reiniciar el live. `nixos-install` se vuelve a correr siempre, porque reutiliza lo que ya hizo y saltearlo podría dejar el sistema sin cargador de arranque (el perfil `system` existe antes de instalarlo). |
 | Borrar los discos antes de particionar (`release_disk`, `wipe_disk`) | sin commitear (2026-11-26) | Pedido del dueño: en la EXO, `cfdisk` sin argumentos solo abre la USB del instalador, y la eMMC viene con Windows. Además libera lo que dejó montado una corrida anterior en la misma sesión. |
 | Discos extra como ext4 vacío para archivos, sin montar (`files_disk`) | sin commitear (2026-11-26) | Pedido del dueño, para la microSD. El formato ext4 lo eligió él, y montarla sola quedó descartado. La raíz es `root:users` con modo `2775` porque el script no crea usuarios: así puede escribir cualquier usuario normal del flake. |
 

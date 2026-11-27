@@ -14,6 +14,21 @@ Reglas de mantenimiento: ver [`AGENTS.md` §13](AGENTS.md#13-mantenimiento-de-ch
 
 ---
 
+## 2026-11-27
+
+- **(sin commitear)** — **Scripts (`install-gpt-exo.sh`) / README / Docs:** volver a correr el script sigue la instalación de una corrida que se cortó, en vez de borrar todo de nuevo (pedido del dueño).
+  - `has_install_layout`: el disco tiene exactamente las 4 particiones que crea el script (GPT, con los nombres `root`, `swap`, `ESP` y `BIOS`, en ese orden). Un disco con Windows u otra cosa nunca coincide.
+  - Si coincide, la lista marca el disco como *"has the partitions of an earlier run"* y se pide `YES` para seguir sobre ellas (`resume=1`) o `ERASE` para borrarlo y empezar de cero; con Enter se elige otro disco, como antes.
+  - Al seguir: se libera el disco (`release_disk`) pero no se borra ni se particiona. `format_part` formatea solo las particiones que no tienen todavía su sistema de archivos (`blkid -p`); las demás se conservan. `nixos-install` se vuelve a correr y reutiliza lo que ya está en el store y en `/mnt/.install-cache`.
+  - Antes de montar (en los dos modos): si queda algo montado en `/mnt` o debajo, corta; si `/mnt` tiene archivos en la RAM del live (los que dejó una corrida que no llegó a montar root, como la de P13), los borra con `find /mnt -xdev -mindepth 1 -delete`.
+  - Las preguntas del principio se repiten siempre (la contraseña de root no se guarda en ningún lado). La deploy key ya se reutilizaba en la misma sesión del live.
+  - Los mensajes de error del montaje y del `STOP` de `nixos-install` dicen cómo seguir (`YES`) o empezar de cero (`ERASE`).
+  - **README:** cómo seguir después de un error. **`AGENTS.md`:** §2 (reanudación), §3 (flujo) y §11 (decisión).
+- **(sin commitear)** — **Scripts (`install-gpt-exo.sh`):** corrige P13. En la primera prueba en la EXO, root (`/dev/mmcblk1p1`) quedó sin sistema de archivos y su `mount` falló (*"wrong fs type, bad option, bad superblock"*; en `dmesg`, *"FAT-fs (mmcblk1p1): bogus number of reserved sectors"*, de `mount` probando tipos al no reconocer nada). El script siguió igual: `nixos-generate-config` escribió un `hardware-configuration.nix` sin `fileSystems."/"` y `nixos-install` falló con *"The option `fileSystems."/".fsType' was accessed but has no value defined"*. Además, las cachés y el store de la instalación fueron a `/mnt` en la RAM del live.
+  - Causa más probable (sin verificar: la salida de `mkfs.ext4` no quedó a la vista): cada vez que `parted` cierra el disco, udev vuelve a leer la tabla de particiones y los `/dev/mmcblk1p*` pueden desaparecer un momento. El formateo corría enseguida del último `parted`, sin esperar, y `mkfs.ext4` no encontró la partición o la encontró ocupada.
+  - Ahora, después del particionado: `udevadm settle`, espera de hasta 10 s a que existan las 4 particiones y otro `udevadm settle`.
+  - `parted`, `mkfs.ext4`, `mkswap`, `mkfs.fat`, `mount` y `swapon` cortan con `fail` si fallan, con el mensaje de qué falló. Con eso, en `install-gpt-exo.sh` ya no queda nada de P5 en el particionado.
+
 ## 2026-11-26
 
 - **(sin commitear)** — **Scripts (`install-gpt-exo.sh`):** corrige el comentario de la ESP. Decía que ocupaba *"about 1 GB"*, pero desde `9bbd37d` va de `1MB` a `512MB`, y la partición BIOS ocupa el resto del primer GiB (`512MiB` a `1024MiB`). Solo cambia el comentario. Salió de una revisión completa del script, que no encontró errores de código.

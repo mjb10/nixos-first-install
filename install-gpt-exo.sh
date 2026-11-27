@@ -15,6 +15,9 @@
 # left as an empty ext4 disk for files, UEFI check, and the system installed straight from the flake repository
 # (nixos-install --flake): the script creates the deploy key, checks the repository before erasing anything and only
 # sets the root password. Everything else (users, bootloader, firmware, 'update') comes from the flake.
+# If a run stops with an error, running the script again continues the installation: it keeps the partitions of the
+# earlier run (unless ERASE is typed), formats only what was not formatted yet and runs nixos-install again, which
+# reuses everything already downloaded or built. The deploy key is reused too, in the same live session.
 
 # Clean the terminal before proceeding with user setup
 clear
@@ -163,9 +166,11 @@ disk_note() {
 # it (Windows included). If the user does not confirm, they can pick another disk from the list.
 show_disks() {
   echo ""
-  echo "Disks found (>> = the one that will be erased):"
+  echo "Disks found (>> = the chosen one):"
   while read -r name rest; do
-    if [ "$name" = "$diskName" ]; then
+    if [ "$name" = "$diskName" ] && has_install_layout "$name"; then
+      printf '>> %-12s %s   <-- CHOSEN: has the partitions of an earlier run\n' "$name" "$rest"
+    elif [ "$name" = "$diskName" ]; then
       printf '>> %-12s %s   <-- CHOSEN: WILL BE ERASED\n' "$name" "$rest"
     else
       printf '   %-12s %s   (%s)\n' "$name" "$rest" "$(disk_note "$name")"
@@ -187,12 +192,35 @@ installable() {
   return 0
 }
 
+# True when a disk already has exactly the 4 partitions this script creates (GPT, named root, swap, ESP and BIOS, in
+# that order): an earlier run partitioned it and stopped, so the installation can continue on it without erasing it.
+# A disk that comes with Windows (or anything else) never matches.
+has_install_layout() {
+  local p="/dev/$1" i=0 name
+  [[ $1 =~ [0-9]$ ]] && p="${p}p"
+  [ "$(lsblk -ndo PTTYPE "/dev/$1" 2>/dev/null)" = "gpt" ] || return 1
+  [ "$(lsblk -lno TYPE "/dev/$1" 2>/dev/null | grep -cx part)" -eq 4 ] || return 1
+  for name in root swap ESP BIOS; do
+    i=$((i + 1))
+    [ "$(lsblk -ndo PARTLABEL "$p$i" 2>/dev/null)" = "$name" ] || return 1
+  done
+}
+
 installable "$diskName" || { echo "Disk /dev/$diskName cannot be used."; cancel; }
+resume=0 # 1 = continue the installation of an earlier run on the partitions it left
 while true; do
   show_disks
-  read -rp "This will ERASE /dev/$diskName. Type YES to continue, or press Enter to choose another disk: " confirm < /dev/tty
-  [ "$confirm" = "YES" ] && break
-  read -rp "Disk to erase instead (a name from the list), or press Enter to cancel: " other < /dev/tty
+  if has_install_layout "$diskName"; then
+    echo "/dev/$diskName already has the partitions of an earlier run of this script. The installation can continue on"
+    echo "them: nothing is erased, only what is not formatted yet gets formatted, and nixos-install reuses what it already did."
+    read -rp "Type YES to continue the earlier installation, ERASE to erase /dev/$diskName and start over, or press Enter to choose another disk: " confirm < /dev/tty
+    [ "$confirm" = "YES" ] && { resume=1; break; }
+    [ "$confirm" = "ERASE" ] && break
+  else
+    read -rp "This will ERASE /dev/$diskName. Type YES to continue, or press Enter to choose another disk: " confirm < /dev/tty
+    [ "$confirm" = "YES" ] && break
+  fi
+  read -rp "Disk to use instead (a name from the list), or press Enter to cancel: " other < /dev/tty
   [ -n "$other" ] || cancel
   if installable "$other"; then
     diskName="$other"
@@ -277,10 +305,13 @@ files_disk() {
   rmdir "$dir"
 }
 
-# Erase first, so the disk is empty (only free space) when it gets partitioned
+# Stop using the disks (an earlier run leaves them mounted on /mnt, with the swap on) and erase them, so they are
+# empty (only free space) when they get partitioned. When continuing an earlier run, the install disk is not erased.
 umount -R /mnt 2>/dev/null # free /mnt if an earlier run of this script left the new system mounted there
 for name in "${alsoErase[@]}" "$diskName"; do release_disk "$name"; done
-for name in "${alsoErase[@]}" "$diskName"; do wipe_disk "$name"; done
+eraseDisks=("${alsoErase[@]}")
+[ "$resume" = 1 ] || eraseDisks+=("$diskName")
+for name in "${eraseDisks[@]}"; do wipe_disk "$name"; done
 # The extra disks (the microSD on the EXO) are ready for files right away
 for name in "${alsoErase[@]}"; do
   files_disk "$name" || fail "Could not prepare /dev/$name for files (NixOS was not installed yet)."
@@ -290,34 +321,77 @@ done
 part="/dev/$diskName"
 [[ $diskName =~ [0-9]$ ]] && part="${part}p"
 
-# create gpt partition table
-parted -s /dev/$diskName -- mklabel gpt
+if [ "$resume" = 1 ]; then
+  echo ""
+  echo "Continuing the earlier installation: the partitions of /dev/$diskName are kept."
+else
+  partFail="Could not create the partitions of /dev/$diskName. Run the script again."
 
-# Add the root partition. This will fill the disk except for the end part, where the swap will live.
-# It starts at 1024MiB, right where the BIOS boot partition ends (with 1024MB = 976.6MiB they would overlap).
-parted -s /dev/$diskName -- mkpart root ext4 1024MiB -2GB
+  # create gpt partition table
+  parted -s /dev/$diskName -- mklabel gpt || fail "$partFail"
 
-# Next, add a swap partition. The size required will vary according to needs, here a 2 GB one is created (the EXO has 2 GB of RAM; swap also helps nix evaluate the flake).
-parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
+  # Add the root partition. This will fill the disk except for the end part, where the swap will live.
+  # It starts at 1024MiB, right where the BIOS boot partition ends (with 1024MB = 976.6MiB they would overlap).
+  parted -s /dev/$diskName -- mkpart root ext4 1024MiB -2GB || fail "$partFail"
 
-# Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It takes the first half of the space reserved at the start of the disk (1MB to 512MB; the BIOS boot partition below takes 512MiB to 1024MiB). On the EXO, the 32-bit UEFI firmware starts Limine from EFI/BOOT/BOOTIA32.EFI on this partition (D-64).
-parted -s /dev/$diskName -- mkpart ESP fat32 1MB 512MB
-parted -s /dev/$diskName -- set 3 esp on
+  # Next, add a swap partition. The size required will vary according to needs, here a 2 GB one is created (the EXO has 2 GB of RAM; swap also helps nix evaluate the flake).
+  parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100% || fail "$partFail"
 
-# BIOS boot partition: the EXO does not use it (UEFI only); it stays for PCs with BIOS, like nixos-ferchu's biosSupport = true
-parted -s /dev/$diskName -- mkpart BIOS 512MiB 1024MiB
-parted -s /dev/$diskName -- set 4 bios_grub on
+  # Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It takes the first half of the space reserved at the start of the disk (1MB to 512MB; the BIOS boot partition below takes 512MiB to 1024MiB). On the EXO, the 32-bit UEFI firmware starts Limine from EFI/BOOT/BOOTIA32.EFI on this partition (D-64).
+  parted -s /dev/$diskName -- mkpart ESP fat32 1MB 512MB || fail "$partFail"
+  parted -s /dev/$diskName -- set 3 esp on || fail "$partFail"
+
+  # BIOS boot partition: the EXO does not use it (UEFI only); it stays for PCs with BIOS, like nixos-ferchu's biosSupport = true
+  parted -s /dev/$diskName -- mkpart BIOS 512MiB 1024MiB || fail "$partFail"
+  parted -s /dev/$diskName -- set 4 bios_grub on || fail "$partFail"
+fi
+
+# parted returns before udev is done with the new partition table: each time parted closes the disk, udev reads it
+# again and the partitions (/dev/mmcblk1p1, ...) can disappear for a moment. Wait until udev is done and the 4
+# partitions are there; formatting right away left root without a filesystem once on the EXO (P13).
+udevadm settle
+for i in 1 2 3 4; do
+  for _ in $(seq 20); do [ -b "$part$i" ] && break; sleep 0.5; done
+  [ -b "$part$i" ] || fail "The partition $part$i did not show up after partitioning /dev/$diskName. Run the script again."
+done
+udevadm settle
 
 #Formatting
-mkfs.ext4 -F -L nixos "${part}1"
-mkswap -L swap "${part}2"
-mkfs.fat -F 32 -n boot "${part}3"
+# format_part <partition> <filesystem type> <what it is> <command...>: format it. When continuing an earlier run,
+# only if it does not have that filesystem yet (the earlier run stopped before formatting it, or formatting failed).
+format_part() {
+  local dev="$1" type="$2" what="$3"
+  shift 3
+  if [ "$resume" = 1 ] && [ "$(blkid -p -o value -s TYPE "$dev" 2>/dev/null)" = "$type" ]; then
+    echo "$dev ($what) is already formatted ($type) by the earlier run: kept."
+    return
+  fi
+  "$@" "$dev" || fail "Could not format $dev ($what). Run the script again."
+}
+format_part "${part}1" ext4 root mkfs.ext4 -F -L nixos
+format_part "${part}2" swap swap mkswap -L swap
+format_part "${part}3" vfat ESP mkfs.fat -F 32 -n boot
 
-# mounting
-mount "${part}1" /mnt
+# Nothing of the disks is mounted now, so /mnt is just a folder of this live system, in RAM. If an earlier run
+# stopped before mounting the disk, it may have written there (the Nix store and caches of the installation), and
+# that would take RAM hidden under the mount: delete it.
+mountedOnMnt="$(findmnt -rno TARGET,SOURCE | grep -E '^/mnt(/| )')"
+if [ -n "$mountedOnMnt" ]; then
+  echo "$mountedOnMnt"
+  fail "Something is still mounted on /mnt (above). Unmount it and run the script again."
+fi
+if [ -n "$(ls -A /mnt 2>/dev/null)" ]; then
+  echo "Deleting what an earlier run left in /mnt (in the RAM of this live system)..."
+  find /mnt -xdev -mindepth 1 -delete || fail "Could not empty /mnt. Reboot the installer USB and run the script again."
+fi
+
+# mounting. Stop if something fails: without root mounted on /mnt, the hardware configuration would have no
+# fileSystems."/" (nixos-install fails with "fileSystems."/".fsType ... has no value defined") and everything
+# would be written to the RAM of this live system.
+mount "${part}1" /mnt || fail "Could not mount ${part}1 (root) on /mnt. Run the script again and type ERASE to start over."
 mkdir -p /mnt/boot
-mount "${part}3" /mnt/boot
-swapon "${part}2"
+mount "${part}3" /mnt/boot || fail "Could not mount ${part}3 (ESP) on /mnt/boot. Run the script again and type ERASE to start over."
+swapon "${part}2" || fail "Could not turn on the swap ${part}2. Run the script again and type ERASE to start over."
 
 # Hardware configuration of the new system (disks, kernel modules), which the flake imports. Only this file: the
 # system itself comes from the flake, so no configuration.nix is written.
@@ -352,7 +426,7 @@ until XDG_CACHE_HOME=/mnt/.install-cache DISK="$diskName" nixos-install --flake 
   echo ""
   echo "nixos-install failed with $(flake_ref): read the error above."
   read -rp "Press Enter to try again, type another Nix profile name to try with it, or type STOP to quit: " answer < /dev/tty
-  [ "$answer" = "STOP" ] && fail "nixos-install failed: NixOS was not installed (the disk is already partitioned and mounted on /mnt)."
+  [ "$answer" = "STOP" ] && fail "nixos-install failed: NixOS was not installed. Run the script again and type YES to continue from here (the partitions are kept)."
   [ -n "$answer" ] && nixProfile="$answer"
 done
 rm -rf /mnt/.install-cache

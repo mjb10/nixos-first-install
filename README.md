@@ -95,4 +95,8 @@ Este script no instala un sistema mínimo: instala directamente la configuració
 
 **3.** Instala el sistema de tu repo. Si falla (por ejemplo, por un perfil mal escrito o un corte de red), podés reintentar sin volver a particionar. Al final copia la deploy key al sistema nuevo, para que `update` pueda seguir actualizando desde el repo, borra lo que la instalación dejó sin usar y apaga la máquina.
 
+**Si el script se corta con un error,** volvé a correr el mismo `curl`. Las preguntas del paso 1 se repiten (en la misma sesión del USB, la deploy key es la misma: no hace falta cargarla de nuevo). Si el disco ya tiene las particiones de la corrida anterior, el script lo avisa y te deja elegir:
+- `YES`: sigue desde donde quedó. No borra nada, formatea solo lo que faltaba y vuelve a correr la instalación, que aprovecha lo que ya se había descargado o compilado.
+- `ERASE`: borra el disco y empieza de cero.
+
 **4.** Sacá el USB y encendé: arranca directamente con la configuración de tu repo.

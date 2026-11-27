@@ -3,7 +3,7 @@
 > Estado actual del proyecto: qué script funciona, qué está probado, qué falta probar, problemas conocidos (P), riesgos sin verificar (R) y correcciones.
 > Cambia casi tan seguido como [`CHANGELOG.md`](CHANGELOG.md): actualizalo **en el mismo cambio** que lo afecta (§7).
 > Para entender el proyecto (flujo, mecánicas, convenciones, decisiones): [`AGENTS.md`](AGENTS.md). Historial commit por commit: [`CHANGELOG.md`](CHANGELOG.md).
-> **Actualizado al 2026-11-26** contra el commit **`9bbd37d`** más los cambios sin commitear de `install-gpt-exo.sh` (borrado previo de discos, microSD para archivos e instalación desde el flake; ver `CHANGELOG.md`). Si `git log -1` muestra otro commit, revisá lo que cambió después antes de confiar en este archivo.
+> **Actualizado al 2026-11-27** contra el commit **`1a13cba`** más dos cambios sin commitear en `install-gpt-exo.sh`: la corrección de P13 y la reanudación de una corrida anterior (ver `CHANGELOG.md`). Si `git log -1` muestra otro commit, revisá lo que cambió después antes de confiar en este archivo.
 
 ---
 
@@ -15,7 +15,7 @@
 | `install-gpt.sh` (VPS) | GRUB solo UEFI (`device = "nodev"`) | Nunca. | Debería arrancar en una máquina UEFI desde que se corrigió P2 (`8c5b808`). |
 | `install-msdos-pc.sh` (PC) | GRUB solo BIOS, en `/dev/${diskName}` | Nunca. | Debería funcionar desde que se corrigió P11 (`8c5b808`). No sirve para discos NVMe/eMMC (P6). |
 | `install-gpt-pc.sh` (PC) | Limine (UEFI de 64 y de 32 bits con `BOOTIA32.EFI` desde `c8d9216`, y BIOS) | Nunca. | Por UEFI debería arrancar (ESP FAT montada en `/boot`); por BIOS no está verificado (R5). `connect-tailnet` está desactivado (§2). No sirve para discos NVMe/eMMC (P6). |
-| `install-gpt-exo.sh` (EXO Wings K1322; también se usa en PCs con `sda`) | El que defina el flake: el script ya no escribe configuración (para la EXO, Limine con `BOOTIA32.EFI`) | Sin resultado anotado. El dueño lo prueba en la EXO y en PCs con `sda`. | La versión actual (sin commitear) instala directamente desde el repo del flake y no está probada. Chequeo estático del 2026-11-26 en el sandbox de Nix: `bash -n` y `shellcheck` sin problemas nuevos, y 43 chequeos de su lógica (URL y rama, URL del flake, nombres de partición, "disco en uso", mensajes, `read` desde `/dev/tty`, `< /dev/null`), todos OK. Riesgos: R6 y R7. |
+| `install-gpt-exo.sh` (EXO Wings K1322; también se usa en PCs con `sda`) | El que defina el flake: el script ya no escribe configuración (para la EXO, Limine con `BOOTIA32.EFI`) | 2026-11-27, en la EXO, con `1a13cba`: falló el montaje de root (P13) y `nixos-install` no llegó a construir nada. | Con la corrección de P13 y la reanudación (sin commitear) no está probado. Instala directamente desde el repo del flake; si se corta, volver a correrlo sigue sobre las particiones que dejó. Chequeo estático del 2026-11-26 en el sandbox de Nix: `bash -n` y `shellcheck` sin problemas nuevos, y 43 chequeos de su lógica (URL y rama, URL del flake, nombres de partición, "disco en uso", mensajes, `read` desde `/dev/tty`, `< /dev/null`), todos OK. Riesgos: R6 y R7. |
 
 **Sin probar en VM** (según `CHANGELOG.md`): la tailnet en VPS (headscale, Caddy, `tailnet-join`, `tailnet-key`: `efdcedd`), el disco al flake como `DISK` (`5bc319e`, `efdcedd`), `connect-tailnet` (`856fe37`), los cargadores de arranque actuales (2026-11-25) y todo `install-gpt-exo.sh` (2026-11-26).
 
@@ -42,6 +42,7 @@ Cómo probar sin riesgo: [`AGENTS.md` §10.3](AGENTS.md#103-prueba-real-solo-en-
    Qué revisar:
    - que `git ls-remote` frene una URL, una rama o una clave mal puestas antes de borrar;
    - que el reintento de `nixos-install` funcione con un perfil mal escrito;
+   - la reanudación: cortar con `STOP` y volver a correr el script (con `YES` sigue sin borrar, con `ERASE` empieza de cero), y que un disco con otras particiones (p. ej. Windows) nunca se ofrezca para seguir;
    - que las cachés vayan a `/mnt` (R6);
    - que el sistema arranque con la configuración del flake y que `update` funcione con la clave copiada;
    - el espacio en el store después de `nix-collect-garbage`, comparado con los ~11 GB del camino viejo.
@@ -76,7 +77,7 @@ Detectados leyendo el código: la mayoría al 2026-11-07 (`a64e250`), revisados 
 
 **En `install-gpt-exo.sh`** (revisado al 2026-11-26):
 - **No aplican:** P1 (root se pone con `chpasswd` desde `fe9728a`), P3 y P9 (no escribe `configuration.nix`), P6 (usa `p` en eMMC/NVMe) ni la parte de P7 sobre `username` (no crea usuarios).
-- **Aplican:** P4 (la contraseña de root se ve, aunque se pide dos veces) y P5 en parte. Cortan con error el borrado, la microSD, `nixos-install` (con reintento), la contraseña y la copia de la clave. En cambio, `parted`, `mkfs` y `mount` siguen sin chequeo.
+- **Aplican:** P4 (la contraseña de root se ve, aunque se pide dos veces) y P5 en parte. Cortan con error el borrado, la microSD, el particionado, el formateo y el montaje (desde P13), `nixos-install` (con reintento), la contraseña y la copia de la clave. Quedan sin chequeo la copia del hardware a `/etc/nixos` del live y algunos `mkdir`/`chmod`.
 - **P7 en parte:** la URL del repo y la rama se comprueban con `git ls-remote` antes de borrar, pero el perfil no se valida. Si no existe en el flake, falla `nixos-install`, que se puede reintentar con otro.
 
 | ID | Problema | Dónde | Detalle / arreglo sugerido |
@@ -114,6 +115,7 @@ Lo más nuevo arriba. El detalle de cada cambio está en `CHANGELOG.md`.
 
 | ID | Qué era | Corrección |
 |---|---|---|
+| P13 | En `install-gpt-exo.sh`, el formateo corría enseguida del último `parted`, sin esperar a udev, que vuelve a leer la tabla de particiones cada vez que `parted` cierra el disco (los `/dev/mmcblk1p*` pueden desaparecer un momento). En la EXO, root quedó sin sistema de archivos (causa más probable, sin verificar). Como `mkfs` y `mount` no se chequeaban (P5), el script siguió con `/mnt` en la RAM del live, y `nixos-install` falló por un `hardware-configuration.nix` sin `fileSystems."/"`. | 2026-11-27, sin commitear: `udevadm settle` y espera de las 4 particiones antes de formatear, y `fail` si fallan `parted`, `mkfs`, `mount` o `swapon`. Sin probar. |
 | P12 | En `install-gpt-exo.sh`, la partición BIOS (`512MiB`–`1024MiB`, de `9bbd37d`) se superponía unos 47 MiB con root, que arrancaba en `1024MB` (976,6 MiB). `parted -s` no podía crear la partición 4 y el `set 4 bios_grub on` fallaba. Antes, en `83b05b6`, la BIOS (`1MiB`–`2MiB`) se superponía con la ESP (`1MB`–`1024MB`), y lo arregló `67eca32`. | 2026-11-26, sin commitear: root arranca en `1024MiB`. |
 | P2 | `install-gpt.sh` pedía instalar GRUB en modo BIOS en un disco GPT. Con `device = "/dev/vda"`, NixOS instala primero la parte BIOS y después la EFI, y aborta si cualquiera falla (verificado en `install-grub.pl` de nixpkgs); en un disco GPT sin partición `bios_grub`, la parte BIOS casi con seguridad fallaba antes de llegar a la EFI. Venía de `4fa0101`, que reemplazó el `systemd-boot` original (`daac08f`) por GRUB en modo BIOS; `684b971` le agregó `efiSupport` y `f35753d` lo pasó a Limine. | 2026-11-25, `8c5b808`: GRUB solo UEFI con `device = "nodev"`. |
 | P11 | `install-msdos-pc.sh` usaba Limine sin ninguna partición FAT (desde `f35753d`). Limine solo lee particiones FAT (el instalador de NixOS lo dice: *"Limine cannot be installed on a system without an unencrypted partition formatted as FAT"*). Ese chequeo de `limine-install.py` (nixpkgs) solo corre con `efiSupport = false`: con `efiSupport = true` copiaba todo a `/boot/limine`, dentro de la ext4, sin quejarse, así que la instalación terminaba bien pero la PC probablemente no arrancaba. | 2026-11-25, `8c5b808`: GRUB solo BIOS en `/dev/${diskName}`. Ojo al copiar bloques de los scripts de VPS a los de PC: el disco tiene que ser `/dev/${diskName}`, nunca `/dev/vda`. |
@@ -125,7 +127,7 @@ Lo más nuevo arriba. El detalle de cada cambio está en `CHANGELOG.md`.
 
 - **Cuándo:** en el mismo cambio (y el mismo commit) que lo afecta, junto con la entrada de `CHANGELOG.md`: cuando se prueba algo, cuando aparece o se corrige un problema, cuando cambia una diferencia de paridad o cuando se decide algo pendiente.
 - **Encabezado:** actualizá la línea *"Actualizado al … contra el commit …"*. Si el cambio no está commiteado, decilo ahí y en las filas que correspondan (*"sin commitear"*); después de commitear, reemplazalo por el hash.
-- **IDs:** `P` para problemas confirmados leyendo el código, `R` para riesgos que hay que verificar. Nunca se renumeran ni se reutilizan: el próximo problema nuevo es **P13** y el próximo riesgo, **R8**. `CHANGELOG.md` y `AGENTS.md` los citan.
+- **IDs:** `P` para problemas confirmados leyendo el código, `R` para riesgos que hay que verificar. Nunca se renumeran ni se reutilizan: el próximo problema nuevo es **P14** y el próximo riesgo, **R8**. `CHANGELOG.md` y `AGENTS.md` los citan.
 - **Al corregir uno:** movelo de §4 o §5 a §6 (Corregidos), arriba de todo, con la fecha y el commit, y anotalo en `CHANGELOG.md`. Actualizá §1 si cambia el estado de algún script.
 - **Al probar algo:** anotá en §1 qué se probó, dónde (VM con BIOS o UEFI, hardware real, Upcloud), con qué commit y en qué fecha, y sacalo de *"Qué probar primero"* (§2).
 - **No arregles problemas sin que el usuario lo pida.** Este archivo los registra; corregirlos es otra tarea.
