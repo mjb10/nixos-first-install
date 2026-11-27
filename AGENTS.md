@@ -4,15 +4,15 @@
 > `CLAUDE.md` es solo un alias que importa este archivo: **editá siempre `AGENTS.md`**, nunca `CLAUDE.md`.
 > Este archivo **describe** el proyecto y cambia poco. El **estado** (qué funciona, qué está probado, problemas, riesgos y correcciones) está en [`STATUS.md`](STATUS.md), que cambia casi tan seguido como el historial.
 > Historial detallado commit por commit: [`CHANGELOG.md`](CHANGELOG.md) (lo más nuevo arriba).
-> Revisado el **2026-11-25** contra el commit **`479bf18`** más los cambios sin commitear del cargador de arranque (GRUB en todos menos `install-gpt-pc.sh`; ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log 479bf18..HEAD -p`) antes de confiar ciegamente en este documento.
+> Revisado el **2026-11-26** contra el commit **`9bbd37d`** más los cambios sin commitear de `install-gpt-exo.sh` (borrado previo de discos, microSD para archivos e instalación desde el flake; ver `CHANGELOG.md`). La revisión completa de todo el documento es del 2026-11-07 (`b4f632f`). Si `git log -1` muestra otro commit, revisá lo que cambió después (`git log 9bbd37d..HEAD -p`) antes de confiar ciegamente en este documento.
 
 ---
 
 ## 0. Lo mínimo antes de tocar algo
 
 1. **Nunca ejecutes ni pruebes nada de los `install-*.sh` en el sistema principal** (la máquina donde está clonado el repo): borran y reparticionan un disco sin pedir confirmación. En el host solo se **lee** el texto; los chequeos estáticos van en el sandbox de Nix o en un contenedor sin red, y la instalación en una VM descartable (§10).
-2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8).
-3. **Dos heredocs:** el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile` y, solo en VPS, `$headscaleDomain`, `$headscaleIp`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
+2. **Paridad:** los 4 scripts son copias; todo cambio común va en los 4 (§8). `install-gpt-exo.sh` es un script aparte, fuera de la paridad (§2).
+3. **Dos heredocs** (en los 4 scripts; `install-gpt-exo.sh` no escribe `configuration.nix`): el bloque 1 solo guarda en un `let` de Nix lo que se ingresa al instalar (`$username`, `$diskName`, `$nixProfile` y, solo en VPS, `$headscaleDomain`, `$headscaleIp`); el bloque 2 (literal) tiene todo el attribute set y usa esos valores como variables de Nix (`${username}`), nunca como `$username` (§6.3).
 4. **Todo `read` usa `< /dev/tty`**: el script llega por stdin (`curl … | bash`), así que stdin *es* el script (§6.1, §6.2).
 5. **`main` es producción:** cada push lo descarga el próximo que ejecute el `curl`. Documentá todo cambio en `CHANGELOG.md` (y en `STATUS.md`, `README.md` o `AGENTS.md` si corresponde) (§13, §14).
 6. **Leé [`STATUS.md`](STATUS.md) antes de tocar algo:** qué script está probado, qué está roto (P…), qué riesgos hay (R…) y qué falta probar.
@@ -23,7 +23,8 @@
 
 - **Qué es:** 4 scripts Bash que hacen la *primera instalación* de NixOS desde el ISO live: particionan y formatean un disco, generan un `configuration.nix` mínimo, ejecutan `nixos-install` y apagan la máquina.
 - **Para qué:** dejar un sistema base al que se entra por SSH y que, con un solo comando (`connect-repo`), pasa a gestionarse desde **otro repositorio con un flake de NixOS** (externo a este repo, ver §7). Además, con los scripts de VPS la máquina corre su propia **tailnet**: es servidor **headscale** (con HTTPS vía Caddy si se ingresa un dominio, o por HTTP plano con la IP si no) y a la vez nodo **tailscale** de esa tailnet. Las PCs instaladas con los scripts de PC se suman a esa tailnet como clientes con `connect-tailnet` (§3, Fase 2b; hoy solo en `install-msdos-pc.sh`).
-- **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`, hoy `install-msdos.sh`) y PCs.
+- **Un quinto script, aparte:** `install-gpt-exo.sh`, para la tableta EXO Wings K1322 (2 en 1). Borra los discos antes de particionar y, en vez de un sistema mínimo, instala directamente el sistema del repo del flake (`nixos-install --flake`), sin `connect-repo` (§2, §3, §7.1).
+- **Dónde se usa:** VPS (probado en **Upcloud** con `install-mbr.sh`, hoy `install-msdos.sh`) y PCs; `install-gpt-exo.sh`, en la EXO (el dueño también lo prueba en PCs con `sda`).
 - **Cómo se ejecuta:** solo desde el ISO live de NixOS, en la máquina que se va a borrar: `curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/<script>.sh | bash`. ⚠️ Borra el disco sin preguntar: nunca en el host ni en una máquina con datos (§10).
 - **Estado:** en [`STATUS.md`](STATUS.md) (qué script funciona y está probado, problemas conocidos, riesgos y correcciones).
 - **No hay** build, tests automáticos, CI, releases, tags, licencia, `.gitignore` ni `flake.nix` (este repo **no** es un flake; el flake vive en otro repo).
@@ -43,7 +44,8 @@ Estructura plana, sin subdirectorios.
 | `install-msdos.sh` | `install-mbr.sh` | VPS | MBR (`msdos`) | BIOS | GRUB, solo BIOS | `/dev/vda` (fijo) | 1 GB |
 | `install-gpt.sh` | (igual) | VPS | GPT | UEFI | GRUB, solo UEFI (`nodev`) | `/dev/vda` (fijo) | 1 GB |
 | `install-msdos-pc.sh` | `install-mbr-for-pc.sh` | PC | MBR (`msdos`) | BIOS | GRUB, solo BIOS | se pregunta (`diskName`) | 2 GB |
-| `install-gpt-pc.sh` | `install-gpt-for-pc.sh` | PC | GPT | UEFI (y BIOS) | Limine | se pregunta (`diskName`) | 2 GB |
+| `install-gpt-pc.sh` | `install-gpt-for-pc.sh` | PC | GPT | UEFI de 64 y de 32 bits (y BIOS) | Limine | se pregunta (`diskName`) | 2 GB |
+| `install-gpt-exo.sh` | (nuevo, `8a2a71f`) | EXO Wings K1322 (y PCs con UEFI) | GPT | UEFI de 32 bits (D-64 de `nixos-ferchu`) | el que defina el flake (para la EXO, Limine con `BOOTIA32.EFI`) | detectado solo (la eMMC, p. ej. `mmcblk1`) | 2 GB |
 
 Las URLs raw con los nombres anteriores ya no existen en `main` (devuelven 404).
 
@@ -52,13 +54,25 @@ Los 4 scripts son **casi idénticos** (copias). Solo difieren en:
 1. **Particionado/formateo/montaje** (MBR vs GPT, §4).
 2. **VPS vs PC:** los de PC piden el nombre del disco (justo después de `sudo -i`, o sea que responde root) y usan `/dev/$diskName`, `/dev/$diskName"1"`, etc. (en el `configuration.nix`, con la variable `diskName` del `let`: `boot.loader.grub.device = "/dev/${diskName}"` en `install-msdos-pc.sh` y `boot.loader.limine.biosDevice = "/dev/${diskName}"` en `install-gpt-pc.sh`); `update` le pasa al flake `DISK=/dev/${diskName}` (en VPS, `DISK=/dev/vda`, §7); la swap es de 2 GB en vez de 1 GB.
 3. **Tailnet, VPS vs PC (desde el 2026-11-19):** los de VPS son el **servidor** headscale: prompt del dominio/IP, `headscaleDomain`/`headscaleIp` en el `let`, `services.headscale`, `services.caddy`, `systemd.services.tailnet-join` y el comando `tailnet-key`. Los de PC son **clientes**: nada de eso, y en su lugar el comando `connect-tailnet` (§3, Fase 2b). Todos tienen `services.tailscale.enable = true`, con comentarios distintos.
-4. **Cargador de arranque (desde el 2026-11-25), según la tabla de particiones:** los MSDOS (VPS y PC) usan **GRUB solo BIOS** (`device = "/dev/vda"`, en PC `"/dev/${diskName}"`, con `#efiSupport = true;` y `#efiInstallAsRemovable = true;` comentados). `install-gpt.sh` usa **GRUB solo UEFI** (`device = "nodev"`, `efiSupport = true`, `efiInstallAsRemovable = true`). `install-gpt-pc.sh` usa **Limine** (`biosSupport = true`, `biosDevice = "/dev/${diskName}"`, `efiSupport = true`; la línea de `biosSupport` está indentada con un tab). Ver §5; el estado de cada uno, en `STATUS.md`.
+4. **Cargador de arranque (desde el 2026-11-25), según la tabla de particiones:** los MSDOS (VPS y PC) usan **GRUB solo BIOS** (`device = "/dev/vda"`, en PC `"/dev/${diskName}"`, con `#efiSupport = true;` y `#efiInstallAsRemovable = true;` comentados). `install-gpt.sh` usa **GRUB solo UEFI** (`device = "nodev"`, `efiSupport = true`, `efiInstallAsRemovable = true`). `install-gpt-pc.sh` usa **Limine** (`biosSupport = true`, `biosDevice = "/dev/${diskName}"`, `efiSupport = true`; la línea de `biosSupport` está indentada con un tab). Desde `c8d9216`, ese Limine se compila también para 32 bits (`limine = pkgs.limine.override { targets = [ "i686" "x86_64" ]; }` en el `let`, `package = limine`) y copia `BOOTIA32.EFI` a `EFI/BOOT/` de la ESP, para firmwares UEFI de 32 bits. Ver §5; el estado de cada uno, en `STATUS.md`.
 5. **Substituters, VPS vs PC (desde `f35753d`):** en los de PC, `https://nix-community.cachix.org` está comentado; en los de VPS sigue activo (P3).
-6. **Segundo `clear`, VPS vs PC:** en los de PC está comentado (`#clear`, desde `e6718da`/`12287c9`); en los de VPS sigue.
-7. **`install-gpt-pc.sh` vs `install-msdos-pc.sh` (desde `f1fcd62`):** además del particionado y del cargador de arranque (punto 4), en el GPT están comentados `tailscale` en `environment.systemPackages` (el comando existe igual, porque lo agrega `services.tailscale`) y todo el `connect-tailnet`. También tiene comentadas las líneas de una partición BIOS (`mkpart BIOS 1MiB 2MiB`, `set 4 bios_grub on`, de `17ecf14`).
+6. **Segundo `clear`:** ya no es una diferencia. Está comentado (`#clear`) en los 4: en los de PC desde `e6718da`/`12287c9`, en los de VPS desde `69961bf`.
+7. **`install-gpt-pc.sh` vs `install-msdos-pc.sh` (desde `f1fcd62`):** además del particionado y del cargador de arranque (punto 4), en el GPT están comentados `tailscale` en `environment.systemPackages` (el comando existe igual, porque lo agrega `services.tailscale`) y todo el `connect-tailnet`. Desde `f50b589` tiene activa una partición BIOS (`mkpart BIOS 1MiB 2MiB`, `set 4 bios_grub on`, agregada en `17ecf14` y comentada después), y la ESP arranca en `2MB`.
 8. Diferencias cosméticas de espacios: en los de VPS, `-N ""  > /dev/null` y `tee /root/.github_repo_url  > /dev/null` llevan doble espacio.
 
 Todo lo demás (prompts, `configuration.nix`, `createKeys`, `update`, cierre) es igual y **debe mantenerse igual** (§8).
+
+### `install-gpt-exo.sh`: un script aparte
+
+Es para la EXO Wings K1322 (2 en 1, Intel Bay Trail Z3735F, 2 GB de RAM, eMMC de 29,1 GB, UEFI de 32 bits, lector de microSD). Nació de `install-gpt-pc.sh` (`8a2a71f`), pero **no entra en la paridad**: los cambios de los 4 no se copian acá ni al revés, salvo que el dueño lo pida. Diferencias principales (el flujo completo está en §3):
+
+- **Disco detectado solo:** elige la eMMC (tipo `MMC` en `/sys/block/*/device/type`) y descarta la USB del instalador (la que tiene montado `/iso`), los removibles, los discos USB, las tarjetas SD y las áreas `mmcblk*boot*`/`rpmb` de la eMMC. Si no puede decidir, pregunta. Muestra la lista con sus particiones y pide `YES`; con Enter se elige otro disco. Los nombres de partición llevan `p` si el disco termina en dígito (`mmcblk1p1`, `nvme0n1p1`).
+- **Discos borrados antes de particionar:** `release_disk` desmonta y apaga la swap de lo que dejó una corrida anterior, y corta sin borrar nada si algo lo sigue usando (un montaje, la swap, LVM, RAID o cifrado). `wipe_disk` deja el disco solo con espacio libre: `wipefs` de cada partición y del disco. Nunca toca `mmcblk*boot0/boot1`.
+- **Otros discos (la microSD):** ofrece borrarlos, cada uno con su propio `YES`, y dejarlos como una partición ext4 vacía para archivos (`files_disk`: tabla MSDOS, etiqueta `microSD` o `Archivos`, raíz `root:users` con modo `2775`). No se montan ni entran en la configuración de NixOS.
+- **Todas las preguntas antes de tocar los discos:** la contraseña de root (dos veces, con `ask_password`), el perfil de Nix, la deploy key y la URL del repo con su rama, que se comprueban con `git ls-remote`.
+- **No escribe `configuration.nix`** (no hay heredocs ni `let`) **y no crea usuarios:** instala con `nixos-install --flake` y el sistema entero sale del flake (§7.1). Solo pone la contraseña de root, con `chpasswd`.
+- **Errores:** con `fail()`/`cancel()`, que muestran el mensaje y cortan sin apagar (y vacían el resto del script que llega por stdin). `nixos-install` se puede reintentar.
+- **Particionado propio** (§4).
 
 ### Documentación
 
@@ -133,6 +147,28 @@ Todo lo que sigue, hasta "Otros dispositivos", es **solo de los scripts de VPS**
 
 Después, `update` queda disponible para volver a sincronizar con el repo, y cada vez vuelve a preguntar la rama (mientras el flake siga incluyendo estos scripts; el propio código dice *"You can delete this script"*).
 
+### `install-gpt-exo.sh`: instalación directa desde el flake
+
+> ⚠️ Igual que los otros: corre solo en el live de la máquina que se va a borrar, nunca en el host.
+
+Reemplaza las fases 1 a 3: no hay sistema mínimo ni `connect-repo`.
+
+1. **Preguntas,** después de `clear` y `sudo -i`, sin tocar los discos:
+   - contraseña de root y perfil de Nix;
+   - la deploy key: se escribe `/root/.ssh/config` en el live y se crea la clave (o se reutiliza si ya existe en la misma sesión), y se muestra para cargarla en GitHub;
+   - la URL SSH del repo (formato scp; la https se rechaza) y la rama. Se comprueban con `git ls-remote --exit-code`, y si fallan vuelve a preguntar.
+2. **Disco:** lo detecta, muestra la lista, pide `YES` y ofrece borrar los otros discos.
+3. **Borrado y particionado:** `umount -R /mnt`, `release_disk` y `wipe_disk` de cada disco; `files_disk` de los discos extra; después particiona, formatea, monta y activa la swap.
+4. **Hardware:** `nixos-generate-config --root /mnt --show-hardware-config` escribe solo `/mnt/etc/nixos/hardware-configuration.nix`. Se copia también a `/etc/nixos/` del live.
+5. **Instalación:** `XDG_CACHE_HOME=/mnt/.install-cache DISK=<disco> nixos-install --flake "git+ssh://<url>[?ref=<rama>]#<perfil>" --impure -I hardware=/mnt/etc/nixos/hardware-configuration.nix --no-channel-copy --no-root-passwd --max-jobs 1 < /dev/null`. Las cachés de Nix van al disco nuevo y no a la RAM del live (los temporales ya los pone ahí `nixos-install`). Si falla: Enter reintenta, otro nombre prueba con ese perfil y `STOP` corta.
+6. **Al final:**
+   - `chpasswd` de root;
+   - copia a `/mnt/root/.ssh/` la deploy key, su `.pub`, `config` y `known_hosts`, y escribe `/mnt/root/.github_repo_url` (en el formato de siempre, `git@github.com/usuario/repo.git`);
+   - `nixos-enter --root /mnt -c 'nix-collect-garbage'`, que borra lo que dejaron las compilaciones (la generación instalada queda protegida por el perfil `system`);
+   - `poweroff`.
+
+Motivo (pedido del dueño, 2026-11-26): con el camino de los 4 scripts, la primera generación se construye con el nixpkgs del ISO y la del flake con el de su `flake.lock`, así que casi no comparten nada. En la EXO, el primer `nh clean all` después de `connect-repo` liberaba unos 11 GB.
+
 ---
 
 ## 4. Esquema de particiones
@@ -142,26 +178,28 @@ Después, `update` queda disponible para volver a sincronizar con el repo, y cad
 | `install-msdos.sh` | root ext4, etiqueta `nixos`, `1MB` → `-1GB`, flag `boot` | swap, etiqueta `swap`, `-1GB` → `100%` | — |
 | `install-msdos-pc.sh` | igual, hasta `-2GB` | swap `-2GB` → `100%` | — |
 | `install-gpt.sh` | root ext4 `nixos`, `512MB` → `-1GB` | swap `swap`, `-1GB` → `100%` | ESP FAT32, etiqueta `boot`, `1MB` → `512MB`, flag `esp`, montada en `/mnt/boot` |
-| `install-gpt-pc.sh` | root ext4 `nixos`, `1024MB` → `-2GB` | swap `-2GB` → `100%` | ESP FAT32 `boot`, `1MB` → `1024MB` (desde `56b7b24`), flag `esp`, montada en `/mnt/boot` |
+| `install-gpt-pc.sh` | root ext4 `nixos`, `1024MB` → `-2GB` | swap `-2GB` → `100%` | ESP FAT32 `boot`, `2MB` → `1024MB` (desde `f50b589`; antes `1MB`, de `56b7b24`), flag `esp`, montada en `/mnt/boot`. Más una partición 4 BIOS boot, `1MiB` → `2MiB` (`bios_grub`) |
+| `install-gpt-exo.sh` | root ext4 `nixos`, `1024MiB` → `-2GB` | swap `-2GB` → `100%` | ESP FAT32 `boot`, `1MB` → `512MB`, flag `esp`, montada en `/mnt/boot`. Más una partición 4 BIOS boot, `512MiB` → `1024MiB` (`bios_grub`) |
 
 - En GPT la ESP es la **partición 3** aunque físicamente esté al principio del disco, porque se crea última. Los `mkfs`/`mount` dependen de esa numeración.
 - Los scripts MSDOS **no tienen ninguna partición FAT**: `/boot` queda dentro de la ext4. Por eso usan GRUB solo BIOS: Limine solo lee particiones FAT (se usó desde `f35753d` y se revirtió el 2026-11-25).
-- `install-gpt-pc.sh` tiene comentada una partición 4 BIOS boot (`1MiB` → `2MiB`, flag `bios_grub`, de `17ecf14`), que se agregó para GRUB en modo BIOS sobre GPT. No hay ninguna partición `bios_grub` activa en los GPT.
-- Dispositivos: VPS usa `/dev/vda1..3`; PC usa `/dev/$diskName"1"..` (no sirve para NVMe/eMMC, P6).
+- `install-gpt-pc.sh` tiene una partición 4 BIOS boot (`1MiB` → `2MiB`, flag `bios_grub`). Se agregó en `17ecf14` para GRUB en modo BIOS sobre GPT, se comentó después y está activa de nuevo desde `f50b589`; Limine no la usa explícitamente (sin `partitionIndex`, R5). `install-gpt.sh` no tiene.
+- En `install-gpt-exo.sh`, la ESP y la partición BIOS ocupan el primer GiB, y root arranca justo donde termina la BIOS. Las unidades importan: `1024MB` son 976,6 MiB, y con eso root se superponía con la BIOS (P12, corregido usando `1024MiB`).
+- Dispositivos: VPS usa `/dev/vda1..3`; PC usa `/dev/$diskName"1"..` (no sirve para NVMe/eMMC, P6); `install-gpt-exo.sh` agrega `p` si el nombre del disco termina en dígito (`/dev/mmcblk1p1`).
 - Desde el 2026-11-25, los 4 usan `parted -s` (modo script: nunca pide confirmación) y `mkfs.ext4 -F` (formatea aunque haya un sistema de archivos previo). Con eso se resolvió R3.
 
 ---
 
 ## 5. `configuration.nix` que genera el instalador
 
-Resultado (igual en los 4 scripts salvo el cargador de arranque, los substituters y la tailnet: servidor en VPS, cliente en PC, §2):
+Resultado (igual en los 4 scripts salvo el cargador de arranque, los substituters y la tailnet: servidor en VPS, cliente en PC, §2). `install-gpt-exo.sh` no genera este archivo desde el 2026-11-26: el sistema sale entero del flake (§3, §7.1).
 
 - `let nixProfileName = "<perfil>"; username = "<usuario>"; … in` antes del attribute set: los valores ingresados al instalar. En VPS, también `headscaleDomain = "<dominio>"; headscaleIp = "<ip>";` (con dominio, `headscaleIp` queda vacío; en modo solo IP, `headscaleDomain` queda vacío). En PC, también `diskName = "<disco>";`. `update` usa `nixProfileName` como `#<perfil>` (§6.4); el resto del archivo usa `username`, `headscaleDomain`, `headscaleIp` y `diskName` (§6.3).
 - `imports = [ ./hardware-configuration.nix ];`
 - Cargador de arranque (§2, punto 4):
   - `install-msdos.sh` e `install-msdos-pc.sh`: `boot.loader.grub = { enable = true; device = "/dev/vda"; }` (PC: `"/dev/${diskName}"`), con `#efiSupport = true;` y `#efiInstallAsRemovable = true;` comentados (GRUB solo BIOS).
   - `install-gpt.sh`: `boot.loader.grub = { enable = true; device = "nodev"; efiSupport = true; efiInstallAsRemovable = true; }` (GRUB solo UEFI, en la ESP montada en `/boot`; sin `canTouchEfiVariables`, se instala como "removable" en `EFI/BOOT/BOOTX64.EFI`).
-  - `install-gpt-pc.sh`: `boot.loader.limine = { enable = true; biosSupport = true; biosDevice = "/dev/${diskName}"; efiSupport = true; }` (R5). Con Limine, NixOS desactiva GRUB solo (`boot.loader.grub.enable = lib.mkDefault false`).
+  - `install-gpt-pc.sh`: `boot.loader.limine = { enable = true; biosSupport = true; biosDevice = "/dev/${diskName}"; efiSupport = true; package = limine; additionalFiles."EFI/BOOT/BOOTIA32.EFI" = …; }` (R5), con `limine` compilado para `i686` y `x86_64` en el `let` (`c8d9216`). Con Limine, NixOS desactiva GRUB solo (`boot.loader.grub.enable = lib.mkDefault false`).
 - `boot.kernelPackages = pkgs.linuxPackages_latest;`
 - `boot.tmp.cleanOnBoot = true;`
 - `nix.settings`: `experimental-features = [ "nix-command" "flakes" ]`, `max-jobs = "auto"`, `substituters = [ cache.nixos.org, nix-community.cachix.org ]` en VPS (P3); en PC, solo `cache.nixos.org` (el otro está comentado desde `f35753d`).
@@ -198,7 +236,7 @@ Consecuencias:
 
 ### 6.2 Toda entrada del usuario se lee de `/dev/tty`
 
-Como stdin es el propio script, un `read` normal se "comería" las líneas siguientes del script. Por eso todos los prompts usan `read -rp "…" variable < /dev/tty`. Cualquier prompt nuevo **debe** hacer lo mismo. Lo mismo aplica a cualquier comando que pueda pedir confirmación interactiva (R3). Esto rige solo para el instalador: `createKeys` corre en una sesión SSH interactiva y usa `read` normal. El prompt de la rama de `update` igual lee de `/dev/tty`. Sin terminal (p. ej. `ssh host update` sin `-t`), la redirección falla, `rama` queda vacía y se usa la rama por defecto.
+Como stdin es el propio script, un `read` normal se "comería" las líneas siguientes del script. Por eso todos los prompts usan `read -rp "…" variable < /dev/tty`. Cualquier prompt nuevo **debe** hacer lo mismo. Lo mismo aplica a cualquier comando que pueda pedir confirmación interactiva (R3). Y a los comandos que lanzan otros programas que podrían leer stdin aunque no pregunten nada: en `install-gpt-exo.sh`, `git ls-remote`, `ssh-keygen`, `nixos-install` (que clona por `git`/`ssh`) y `nixos-enter` van con `< /dev/null`. Esto rige solo para el instalador: `createKeys` corre en una sesión SSH interactiva y usa `read` normal. El prompt de la rama de `update` igual lee de `/dev/tty`. Sin terminal (p. ej. `ssh host update` sin `-t`), la redirección falla, `rama` queda vacía y se usa la rama por defecto.
 
 ### 6.3 El `configuration.nix` se escribe con DOS heredocs
 
@@ -258,6 +296,24 @@ Este repo **no** contiene la configuración final; `update` la trae de otro repo
 
 Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor para servidores es `git@github.com:mjb10/nixos-server` (probablemente privado; no está en este repo).
 
+### 7.1 Contrato de `install-gpt-exo.sh`
+
+Como instala con `nixos-install --flake` y no escribe `configuration.nix`, el flake tiene que cumplir con esto (los puntos 1, 4 y 6 de arriba siguen valiendo):
+
+1. **Definir todo el sistema:**
+   - los usuarios, mutables: el script no crea ninguno y solo pone la contraseña de root con `chpasswd`. También sus contraseñas iniciales o la forma de ponerlas;
+   - SSH y sudo;
+   - el firmware (`hardware.enableRedistributableFirmware`, para el Wi-Fi Realtek de la EXO);
+   - el cargador de arranque (para la EXO, Limine con `BOOTIA32.EFI`, por el UEFI de 32 bits);
+   - `stateVersion`;
+   - el comando con que se actualiza (`update`): el script ya no instala `createKeys` ni `update`.
+
+   Lo que falte no existe en el sistema instalado: no hay ninguna configuración intermedia.
+2. **Importar el hardware** con `<hardware>` (el script pasa `-I hardware=/mnt/etc/nixos/hardware-configuration.nix`) o con `/etc/nixos/hardware-configuration.nix`. Durante la instalación, esa ruta absoluta se lee en el live, donde el script deja una copia.
+3. **Leer `DISK` sin `/dev/`** (p. ej. `mmcblk1`), con `builtins.getEnv "DISK"`. Funciona porque el script usa `--impure`.
+4. **Deploy key y URL:** si el `update` del flake usa la deploy key de `/root/.ssh/` y lee `/root/.github_repo_url`, el script se los deja en el sistema nuevo, en el mismo formato que dejaba `createKeys`.
+5. **Substituters:** los que declare el sistema del flake (`nix.settings`) no se usan durante la instalación, porque rige el `nix.conf` del live. Lo que no esté en `cache.nixos.org` se compila en la EXO (por ejemplo, el Limine de 32 bits), y eso pesa en memoria (R6).
+
 ---
 
 ## 8. Convenciones y reglas de trabajo
@@ -265,6 +321,7 @@ Referencia: el historial (`93526f5`, `080c283`) muestra que el repo del autor pa
 ### Paridad entre los 4 scripts (la regla más importante)
 
 - Todo cambio que no sea específico de MBR/GPT o de VPS/PC se aplica **en los 4 scripts**.
+- `install-gpt-exo.sh` **no** entra en la paridad ni en estos `diff`: es un script aparte (§2). Un cambio en los 4 no se copia ahí, ni al revés, salvo que el dueño lo pida.
 - Para verificar la paridad después de editar (`diff` solo compara texto y no ejecuta nada de los scripts: es de lo poco que se puede correr en el host, §10.1):
   ```bash
   diff install-msdos.sh install-gpt.sh              # el particionado y el bloque de GRUB: BIOS vs UEFI (§2, punto 4)
@@ -355,11 +412,12 @@ cat "$(nix-build --no-out-link -E '
 ')"
 ```
 
-- **Por qué es seguro:** los comandos corren dentro del sandbox de builds de Nix, con un usuario sin privilegios (`nixbld`), sin red, sin `sudo`, sin acceso a tu `$HOME` ni a los discos (el `/dev` del sandbox no tiene dispositivos de bloque). Solo ven una copia de solo lectura de los cuatro `install-*.sh` en `/nix/store`: el `filter` deja afuera todo lo demás, para que ningún otro archivo de la carpeta (por ejemplo, algo sin commitear con datos privados) termine en el store, que es legible por todos los usuarios. En el host solo quedan esa copia y un archivo de texto con el resultado. Como `--no-out-link` no crea raíces de GC, el próximo garbage collection normal los elimina: no hace falta correr nada.
+- **Por qué es seguro:** los comandos corren dentro del sandbox de builds de Nix, con un usuario sin privilegios (`nixbld`), sin red, sin `sudo`, sin acceso a tu `$HOME` ni a los discos (el `/dev` del sandbox no tiene dispositivos de bloque). Solo ven una copia de solo lectura de los `install-*.sh` (hoy cinco, con `install-gpt-exo.sh`) en `/nix/store`: el `filter` deja afuera todo lo demás, para que ningún otro archivo de la carpeta (por ejemplo, algo sin commitear con datos privados) termine en el store, que es legible por todos los usuarios. En el host solo quedan esa copia y un archivo de texto con el resultado. Como `--no-out-link` no crea raíces de GC, el próximo garbage collection normal los elimina: no hace falta correr nada.
 - **Requisito:** el sandbox de Nix tiene que estar activado. En NixOS viene así por defecto; comprobalo con `grep '^sandbox' /etc/nix/nix.conf` (debe decir `true`). Si dice `false`, **no** uses este método.
 - `<nixpkgs>` tiene que resolver: `nix-instantiate --find-file nixpkgs` debe devolver una ruta.
 - `bash -n` revisa **un solo archivo por invocación** (con `bash -n a.sh b.sh`, `b.sh` se toma como argumento de `a.sh` y no se revisa); por eso el `for`.
-- `shellcheck` va a marcar P5 y otros detalles: es esperable. Referencia: al `a64e250` los 4 scripts pasan `bash -n`.
+- `shellcheck` va a marcar P5 y otros detalles: es esperable. Referencia: al `a64e250` los 4 scripts pasan `bash -n`. Al 2026-11-26, con los cambios sin commitear, pasan los 5. En `install-gpt-exo.sh`, `shellcheck` solo marca los `/dev/$diskName` sin comillas de los `parted` (como en los otros) y dos falsos positivos: `passwordRoot`, que se asigna con `printf -v`, y el `'$branch'` del mensaje de error, que sí se expande.
+- Además de `bash -n` y `shellcheck`, en el mismo sandbox se pueden probar **pedazos del script que no tocan discos** (validaciones, armado de URLs, nombres de partición), tomándolos del archivo real con `sed`/`grep` y corriéndolos con valores de ejemplo. Se pasa el script de prueba como otra entrada del `runCommand` (`tests = builtins.path { … }`) y se ejecuta con `bash $tests` después del `shellcheck`. Así se hizo el 2026-11-26 con `install-gpt-exo.sh`: 43 chequeos, todos OK (`STATUS.md` §1). Nunca se prueban así comandos de disco (`parted`, `wipefs`, `mkfs`, `mount`) ni nada que necesite root o red.
 - Ni `bash -n` ni `shellcheck` validan el Nix de adentro de los heredocs: eso se valida en la VM (§10.3).
 
 Alternativa sin Nix (otra máquina): un contenedor **rootless**, sin red y con el repo montado en solo lectura:
@@ -368,7 +426,7 @@ Alternativa sin Nix (otra máquina): un contenedor **rootless**, sin red y con e
 podman run --rm --network=none -v "$PWD":/src:ro -w /src docker.io/library/bash:5 \
   bash -c 'for f in install-*.sh; do bash -n "$f" && echo "bash -n OK: $f"; done'
 podman run --rm --network=none -v "$PWD":/src:ro -w /src docker.io/koalaman/shellcheck:stable \
-  install-gpt-pc.sh install-gpt.sh install-msdos-pc.sh install-msdos.sh
+  install-gpt-exo.sh install-gpt-pc.sh install-gpt.sh install-msdos-pc.sh install-msdos.sh
 ```
 
 Nunca uses `--privileged`, `--device` ni montes `/dev` o discos del host. Preferí `podman` rootless: Docker con el grupo `docker` equivale a root en el host.
@@ -416,12 +474,18 @@ Lo único que prueba el comportamiento de verdad (particionado, el Nix generado,
 | `clear` antes de los prompts de usuarios | `dd212b7`, `a64e250` | Que los prompts de contraseñas no queden mezclados con la salida de `parted`/`mkfs`. En los de PC está comentado desde `e6718da`/`12287c9` (los commits no dicen por qué). |
 | Cargador según la tabla de particiones: GRUB solo BIOS en los MSDOS, GRUB solo UEFI (`nodev`) en `install-gpt.sh`, Limine solo en `install-gpt-pc.sh` | sin commitear (2026-11-25), después de `f35753d` | Decisión del dueño. Limine solo lee particiones FAT, y los MSDOS no tienen ninguna; GRUB solo BIOS es la configuración que funcionó en Upcloud. En GPT sin partición `bios_grub`, GRUB solo puede instalarse para UEFI (P2). Los commits que pasaron `install-gpt-pc.sh` a Limine (`f1fcd62`, `f35753d`) no dicen el motivo. |
 | `parted -s` y `mkfs.ext4 -F` | `dad977e`, `f35753d`, `479bf18` | Que no pidan confirmación: leerían la respuesta de stdin, que es el propio script (§6.2, R3). |
+| `install-gpt-exo.sh` como script aparte, fuera de la paridad | `8a2a71f` | Hardware distinto (eMMC, UEFI de 32 bits, 2 GB de RAM) y un flujo propio. |
+| `install-gpt-exo.sh` instala con `nixos-install --flake`, sin `configuration.nix` intermedio | sin commitear (2026-11-26) | Pedido del dueño: que la primera generación ya sea la del repo y no ocupe espacio de más (con el camino viejo, ~11 GB de basura después de `connect-repo`). Para lo mismo: `--no-channel-copy`, cachés de Nix en `/mnt` (los 2 GB de RAM del live) y `nix-collect-garbage` antes de apagar. |
+| Deploy key y comprobación del repo (`git ls-remote`) antes de borrar | sin commitear (2026-11-26) | Que una URL, una rama o una clave mal puestas aparezcan antes de tocar los discos. Es lo que hacía `connect-repo`, ahora dentro del instalador. |
+| El script de la EXO no crea usuarios | sin commitear (2026-11-26) | Decisión del dueño: los usuarios (mutables) salen del flake; el script solo pone la contraseña de root. |
+| Borrar los discos antes de particionar (`release_disk`, `wipe_disk`) | sin commitear (2026-11-26) | Pedido del dueño: en la EXO, `cfdisk` sin argumentos solo abre la USB del instalador, y la eMMC viene con Windows. Además libera lo que dejó montado una corrida anterior en la misma sesión. |
+| Discos extra como ext4 vacío para archivos, sin montar (`files_disk`) | sin commitear (2026-11-26) | Pedido del dueño, para la microSD. El formato ext4 lo eligió él, y montarla sola quedó descartado. La raíz es `root:users` con modo `2775` porque el script no crea usuarios: así puede escribir cualquier usuario normal del flake. |
 
 ---
 
 ## 12. Historia en breve
 
-El desarrollo empezó el 2026-11-05: 72 commits al `b4f632f` (2026-11-07) y 98 al `479bf18` (2026-11-25). Detalle en `CHANGELOG.md`.
+El desarrollo empezó el 2026-11-05: 72 commits al `b4f632f` (2026-11-07), 98 al `479bf18` (2026-11-25) y 109 al `9bbd37d` (2026-11-26). Detalle en `CHANGELOG.md`.
 
 1. **2026-11-05, mañana:** `install-mbr.sh` inicial con usuario fijo `nixi` y un `configuration.nix` completo (con comentarios por defecto, `fail2ban`, `btop`). Se agregan `createKeys` (deploy key) y un alias `update` con `bash -c` y `nixos-rebuild switch`.
 2. **2026-11-05, mediodía:** `install-gpt.sh` (con `systemd-boot`), README con los comandos `curl`.
@@ -433,7 +497,8 @@ El desarrollo empezó el 2026-11-05: 72 commits al `b4f632f` (2026-11-07) y 98 a
 8. **2026-11-09 a 2026-11-11:** perfil de Nix elegido al instalar, el bloque 1 del heredoc pasa a ser solo un `let`, rama opcional en `update` y reinicio solo si `update` termina bien.
 9. **2026-11-18 y 2026-11-19:** `tailscale` en los 4, el disco al flake como `DISK`, headscale en los de VPS (servidor) y `connect-tailnet` en los de PC (clientes).
 10. **2026-11-20 a 2026-11-23:** GRUB con `efiSupport` en los 4. En `install-gpt-for-pc.sh`, una serie de pruebas: ESP de 1 GB, una partición `bios_grub` (agregada y después comentada), `parted -s` y el paso a Limine (con `tailscale` y `connect-tailnet` comentados). En PC se comenta el segundo `clear`.
-11. **2026-11-25:** Limine en los 4, renombre de los scripts (`mbr` → `msdos`, `-for-pc` → `-pc`), `parted -s` y `mkfs.ext4 -F` en los 4, y vuelta a GRUB en todos menos `install-gpt-pc.sh` (solo BIOS en los MSDOS, solo UEFI en `install-gpt.sh`).
+11. **2026-11-25:** Limine en los 4, renombre de los scripts (`mbr` → `msdos`, `-for-pc` → `-pc`), `parted -s` y `mkfs.ext4 -F` en los 4, y vuelta a GRUB en todos menos `install-gpt-pc.sh` (solo BIOS en los MSDOS, solo UEFI en `install-gpt.sh`; `8c5b808`, junto con el nuevo `STATUS.md`). Después: el segundo `clear` comentado también en VPS, y en `install-gpt-pc.sh` la partición BIOS activa y Limine de 32 bits (`BOOTIA32.EFI`). Nace `install-gpt-exo.sh` para la EXO Wings K1322 (detección del disco, confirmación, preguntas antes de borrar) y se ajusta su particionado varias veces esa noche.
+12. **2026-11-26:** en `install-gpt-exo.sh` (sin commitear): borrado de los discos antes de particionar, microSD como disco ext4 para archivos, corrección del solapamiento de particiones (P12) e instalación directa desde el flake (`nixos-install --flake`), con la deploy key y el repo comprobados antes de borrar. El script deja de escribir `configuration.nix` y de crear usuarios.
 
 ---
 
@@ -450,7 +515,7 @@ El desarrollo empezó el 2026-11-05: 72 commits al `b4f632f` (2026-11-07) y 98 a
 
 ## 14. Checklist para cualquier cambio
 
-1. ¿El cambio aplica a los 4 scripts? Aplicalo en los 4 y corré los `diff` de paridad (§8).
+1. ¿El cambio aplica a los 4 scripts? Aplicalo en los 4 y corré los `diff` de paridad (§8). `install-gpt-exo.sh` va aparte: solo se toca si el cambio es para él.
 2. ¿Agregaste un prompt? `read -rp … < /dev/tty` (§6.2).
 3. ¿Tocaste el `configuration.nix`? Variables de instalación → `let` del bloque 1, y en el bloque 2 se usan como variables de Nix (`${username}`, nunca `$username`); todo lo demás, incluido el código de `createKeys`/`update` → bloque 2; ninguna línea igual a `EOF`; llaves balanceadas; nada de `${…}` dentro de `'' … ''` (§6.3, §6.4).
 4. Chequeos estáticos (`bash -n` y `shellcheck`) **solo** en el sandbox de Nix o en un contenedor sin red (§10.2), nunca en el host. Si el cambio altera el comportamiento, probalo en una VM descartable (§10.3).

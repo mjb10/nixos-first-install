@@ -7,17 +7,34 @@
 # - The firmware is most likely 32-bit UEFI (D-64). The stock NixOS installer USB only has the
 #   64-bit EFI loader and may not boot on the EXO: see docs/area3-implementacion/fase7-host.md (A3-78).
 # - Turn Secure Boot off in the firmware setup (Limine is not signed).
+# - Have the flake repository ready: the script shows a deploy key to add to it on GitHub.
 # - This script ERASES the chosen disk, Windows included.
 #
 # Changes from install-gpt-pc.sh: automatic disk detection, eMMC/NVMe partition names (mmcblk0p1), confirmation before
-# erasing, UEFI check, redistributable firmware (Realtek Wi-Fi), DISK without /dev/ in 'update',
-# no docker group or Tailscale, user questions before erasing, and the same stateVersion as nixos-ferchu.
+# erasing, the disk erased (only free space) before partitioning, other disks (the microSD), if confirmed, erased and
+# left as an empty ext4 disk for files, UEFI check, and the system installed straight from the flake repository
+# (nixos-install --flake): the script creates the deploy key, checks the repository before erasing anything and only
+# sets the root password. Everything else (users, bootloader, firmware, 'update') comes from the flake.
 
 # Clean the terminal before proceeding with user setup
 clear
 
 # SUDO
 sudo -i
+
+# Stop with an error message (without powering off), also when the script comes through a pipe
+fail() {
+  echo "ERROR: $1"
+  [ -t 0 ] || cat > /dev/null
+  exit 1
+}
+
+cancel() {
+  echo "Cancelled: nothing was changed."
+  # When the script comes through a pipe, drain the rest so it does not keep running after this exit
+  [ -t 0 ] || cat > /dev/null
+  exit 1
+}
 
 # Ask everything first, before touching the disk
 # Ask for a password twice (visible, by the user's choice) until both match and it is not empty. $1 = variable, $2 = whose
@@ -35,33 +52,53 @@ ask_password() {
 # Clean the terminal before proceeding with user setup
 #clear
 
-# setting password for user 'root'
+# setting password for user 'root'. It is the only password the script sets: the other users and their passwords
+# come from the flake (mutable users).
 echo ""
 ask_password passwordRoot root
 echo ""
 echo "Password for root is saved!"
-
-echo ""
-# Setting username for new user
-echo "Now set the username for the new user"
-while true; do
-  read -rp "Type username for new user: " username < /dev/tty
-  [[ $username =~ ^[a-z_][a-z0-9_-]*$ ]] && [ "$username" != "root" ] && break
-  echo "Invalid username: use lowercase letters, digits, '_' or '-', starting with a letter or '_' (not 'root')."
-done
-echo ""
-
-# Setting password for new user
-ask_password password "$username"
 echo ""
 
 echo "Now set the Nix Profile name..."
 echo ""
-echo "ATTENTION! If you are going to connect to a repo it must match with the Nix profile name configured in your flake.nix file you intend to use."
-echo "If you are not connecting to a repo, you can choose any name."
+echo "ATTENTION! It must match the name of the configuration in the flake.nix of your repo (nixosConfigurations.<name>)."
 echo "The default is 'nixos'."
 read -rp "Type Nix Profile name: " nixProfile < /dev/tty
 nixProfile=${nixProfile:-nixos} # Use 'nixos' if left empty
+echo ""
+
+# Deploy key for the flake repository (what 'connect-repo' did after the first boot). It is created on this live
+# system, which clones the repository during the installation, and copied to the new system at the end so 'update'
+# keeps working. If the script runs again in the same live session, it reuses the key already added on GitHub.
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+printf '%s\n' "Host github.com" "  HostName github.com" "  User git" "  IdentityFile /root/.ssh/github_deploy_key" \
+  "  IdentitiesOnly yes" "  StrictHostKeyChecking accept-new" > /root/.ssh/config
+[ -f /root/.ssh/github_deploy_key ] || ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N "" < /dev/null > /dev/null
+echo "Add this key to your GitHub repository as a deploy key (Settings > Deploy keys, read access is enough):"
+echo ""
+cat /root/.ssh/github_deploy_key.pub
+echo ""
+
+# Repository and branch, checked now with the deploy key: a wrong URL, branch or key shows up before erasing anything
+while true; do
+  read -rp "SSH URL of the repository (e.g. git@github.com:user/repo.git), or press Enter to cancel: " repoUrl < /dev/tty
+  [ -n "$repoUrl" ] || cancel
+  if ! [[ $repoUrl =~ ^[^@/:]+@[^@/:]+:[^:]+$ ]]; then
+    echo "Use the SSH URL of the repository, like git@github.com:user/repo.git (not the https one)."
+    continue
+  fi
+  read -rp "Branch (press Enter for the default branch of the repository): " branch < /dev/tty
+  ref="HEAD"
+  [ -n "$branch" ] && ref="refs/heads/$branch"
+  git ls-remote --exit-code "$repoUrl" "$ref" < /dev/null > /dev/null && break
+  echo "Could not read ${branch:+the branch '$branch' of }$repoUrl: check the URL, the branch and that the deploy key was added on GitHub, then try again."
+  echo ""
+done
+# git@github.com:user/repo.git -> git@github.com/user/repo.git (the format 'update' reads from /root/.github_repo_url)
+repoPath=$(tr ':' '/' <<< "$repoUrl")
+echo "Repository found: $repoPath${branch:+ (branch $branch)}"
 echo ""
 
 echo "Everything is set!"
@@ -110,23 +147,28 @@ else
   echo "WARNING: this live system did not boot in UEFI mode (BIOS/legacy). The EXO Wings needs UEFI."
 fi
 
+# What a disk is, or why it was not chosen, for the lists below
+disk_note() {
+  local note="discarded" c
+  case "$1" in mmcblk*boot*|mmcblk*rpmb) note="eMMC boot area" ;; zram*|ram*) note="RAM disk" ;; sr*) note="CD/DVD" ;; esac
+  [ "$(cat "/sys/block/$1/removable" 2>/dev/null)" = "1" ] && note="removable"
+  [ "$(lsblk -ndo TRAN "/dev/$1" 2>/dev/null)" = "usb" ] && note="USB disk"
+  [[ $1 == mmcblk* ]] && [ "$(cat "/sys/block/$1/device/type" 2>/dev/null)" = "SD" ] && note="SD card"
+  [ "$1" = "$isoDisk" ] && note="installer USB"
+  for c in "${candidates[@]}"; do [ "$c" = "$1" ] && note="candidate"; done
+  echo "$note"
+}
+
 # Last chance: show every disk found and the one chosen, with its current partitions, before erasing
 # it (Windows included). If the user does not confirm, they can pick another disk from the list.
 show_disks() {
   echo ""
   echo "Disks found (>> = the one that will be erased):"
   while read -r name rest; do
-    note="discarded"
-    case "$name" in mmcblk*boot*|mmcblk*rpmb) note="eMMC boot area" ;; zram*|ram*) note="RAM disk" ;; sr*) note="CD/DVD" ;; esac
-    [ "$(cat "/sys/block/$name/removable" 2>/dev/null)" = "1" ] && note="removable"
-    [ "$(lsblk -ndo TRAN "/dev/$name" 2>/dev/null)" = "usb" ] && note="USB disk"
-    [[ $name == mmcblk* ]] && [ "$(cat "/sys/block/$name/device/type" 2>/dev/null)" = "SD" ] && note="SD card"
-    [ "$name" = "$isoDisk" ] && note="installer USB"
-    for c in "${candidates[@]}"; do [ "$c" = "$name" ] && note="candidate"; done
     if [ "$name" = "$diskName" ]; then
       printf '>> %-12s %s   <-- CHOSEN: WILL BE ERASED\n' "$name" "$rest"
     else
-      printf '   %-12s %s   (%s)\n' "$name" "$rest" "$note"
+      printf '   %-12s %s   (%s)\n' "$name" "$rest" "$(disk_note "$name")"
     fi
   done < <(lsblk -dn -e 7 -o NAME,SIZE,TYPE,TRAN,MODEL)
   echo ""
@@ -145,20 +187,6 @@ installable() {
   return 0
 }
 
-# Stop with an error message (without powering off), also when the script comes through a pipe
-fail() {
-  echo "ERROR: $1"
-  [ -t 0 ] || cat > /dev/null
-  exit 1
-}
-
-cancel() {
-  echo "Cancelled: nothing was changed."
-  # When the script comes through a pipe, drain the rest so it does not keep running after this exit
-  [ -t 0 ] || cat > /dev/null
-  exit 1
-}
-
 installable "$diskName" || { echo "Disk /dev/$diskName cannot be used."; cancel; }
 while true; do
   show_disks
@@ -173,6 +201,91 @@ while true; do
   fi
 done
 
+# Other disks of this machine that can also be erased and left as an empty ext4 disk for the user's files (on the
+# EXO Wings, the microSD card in its slot, which shows up as another mmcblk disk). NixOS is not installed on them and
+# does not mount them: they are free space for files after the installation. Asked now, before erasing anything;
+# Enter keeps each one as it is. The installer USB, other USB disks, the eMMC boot areas, RAM disks and CD/DVD
+# drives are never offered.
+alsoErase=()
+for name in $(lsblk -dn -e 7 -o NAME); do
+  [ "$name" = "$diskName" ] && continue
+  installable "$name" || continue
+  [ "$(lsblk -ndo TRAN "/dev/$name" 2>/dev/null)" = "usb" ] && continue
+  echo ""
+  echo "Another disk: /dev/$name ($(disk_note "$name")). Its current partitions:"
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "/dev/$name"
+  read -rp "Also ERASE /dev/$name and leave it as an empty disk for your files (ext4, NixOS is not installed on it)? Type YES to erase it, or press Enter to keep it: " confirm < /dev/tty
+  [ "$confirm" = "YES" ] && alsoErase+=("$name")
+done
+
+# Partitions of a disk (/dev/sda1, /dev/mmcblk1p1, ...): only them, not the disk or what sits on top (LVM, encryption)
+partitions_of() {
+  lsblk -lnpo NAME,TYPE "/dev/$1" | awk '$2 == "part" { print $1 }'
+}
+
+# Stop using a disk before erasing it: turn off its swap and unmount its partitions (an earlier run of this
+# script leaves them mounted on /mnt, with the swap on). If something still uses it (LVM, RAID, encryption, a busy
+# mount), stop before erasing anything.
+release_disk() {
+  local p
+  for p in $(partitions_of "$1"); do
+    swapoff "$p" 2>/dev/null
+    umount -A "$p" 2>/dev/null
+  done
+  if lsblk -rno TYPE,MOUNTPOINTS "/dev/$1" | grep -qvE '^(disk|part) *$'; then
+    lsblk -o NAME,TYPE,MOUNTPOINTS "/dev/$1"
+    fail "/dev/$1 is still in use (mounted, swap, LVM, RAID or encryption). Free it and run the script again: nothing was erased."
+  fi
+}
+
+# Leave a disk with only free space, like deleting all its partitions with cfdisk: erase the signatures inside
+# each partition (filesystems, old swap, RAID/LVM) and then the partition tables of the disk (MBR, GPT and the
+# GPT backup at the end). Only this disk: the eMMC boot areas (mmcblk1boot0/boot1) are other devices and stay as they are.
+wipe_disk() {
+  local p
+  echo ""
+  echo "Erasing /dev/$1..."
+  for p in $(partitions_of "$1"); do
+    wipefs -af "$p"
+  done
+  udevadm settle # let udev finish reading the wiped partitions
+  # Without -f, wipefs opens the disk exclusively (it fails if something still uses it) and, after erasing,
+  # makes the kernel re-read the now empty partition table, so the old partitions disappear
+  wipefs -a "/dev/$1" || fail "Could not erase the partition table of /dev/$1."
+  udevadm settle # wait until the old partitions are gone before creating the new ones
+}
+
+# Leave an erased extra disk as one empty ext4 partition for files, labeled 'microSD' (SD cards) or 'Archivos' (other
+# disks). Its root directory belongs to the group 'users' (GID 100 on NixOS, the group of every normal user) and the
+# group can write on it (2775: new folders keep the group), so the users created by the flake can save files without
+# sudo once it is mounted. Nothing mounts it: it is not in the NixOS configuration.
+files_disk() {
+  local p="/dev/$1" label="Archivos" dir
+  [[ $1 =~ [0-9]$ ]] && p="${p}p"
+  [ "$(disk_note "$1")" = "SD card" ] && label="microSD"
+  echo ""
+  echo "Preparing /dev/$1 for files (ext4, label '$label')..."
+  parted -s "/dev/$1" -- mklabel msdos || return 1
+  parted -s "/dev/$1" -- mkpart primary ext4 1MiB 100% || return 1
+  udevadm settle
+  mkfs.ext4 -F -L "$label" -E root_owner=0:100 "${p}1" || return 1
+  # mkfs.ext4 cannot set the mode of the root directory: mount it for a moment to do it
+  dir="$(mktemp -d)"
+  mount "${p}1" "$dir" || return 1
+  chmod 2775 "$dir"
+  umount "$dir"
+  rmdir "$dir"
+}
+
+# Erase first, so the disk is empty (only free space) when it gets partitioned
+umount -R /mnt 2>/dev/null # free /mnt if an earlier run of this script left the new system mounted there
+for name in "${alsoErase[@]}" "$diskName"; do release_disk "$name"; done
+for name in "${alsoErase[@]}" "$diskName"; do wipe_disk "$name"; done
+# The extra disks (the microSD on the EXO) are ready for files right away
+for name in "${alsoErase[@]}"; do
+  files_disk "$name" || fail "Could not prepare /dev/$name for files (NixOS was not installed yet)."
+done
+
 # Partition names: disks whose name ends in a digit (eMMC, NVMe) add a 'p' (mmcblk0 -> mmcblk0p1); sda -> sda1
 part="/dev/$diskName"
 [[ $diskName =~ [0-9]$ ]] && part="${part}p"
@@ -181,7 +294,8 @@ part="/dev/$diskName"
 parted -s /dev/$diskName -- mklabel gpt
 
 # Add the root partition. This will fill the disk except for the end part, where the swap will live.
-parted -s /dev/$diskName -- mkpart root ext4 1024MB -2GB
+# It starts at 1024MiB, right where the BIOS boot partition ends (with 1024MB = 976.6MiB they would overlap).
+parted -s /dev/$diskName -- mkpart root ext4 1024MiB -2GB
 
 # Next, add a swap partition. The size required will vary according to needs, here a 2 GB one is created (the EXO has 2 GB of RAM; swap also helps nix evaluate the flake).
 parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
@@ -201,208 +315,64 @@ mkfs.fat -F 32 -n boot "${part}3"
 
 # mounting
 mount "${part}1" /mnt
-mkdir -p /mnt/boot  
+mkdir -p /mnt/boot
 mount "${part}3" /mnt/boot
 swapon "${part}2"
 
-# create template for NixOS configuration
-nixos-generate-config --root /mnt
+# Hardware configuration of the new system (disks, kernel modules), which the flake imports. Only this file: the
+# system itself comes from the flake, so no configuration.nix is written.
+mkdir -p /mnt/etc/nixos
+nixos-generate-config --root /mnt --show-hardware-config > /mnt/etc/nixos/hardware-configuration.nix || fail "Could not generate the hardware configuration."
+# The flake can import it as <hardware> (the -I of nixos-install below) or as /etc/nixos/hardware-configuration.nix.
+# While installing, that absolute path is read on this live system, so a copy goes there too.
+mkdir -p /etc/nixos
+cp /mnt/etc/nixos/hardware-configuration.nix /etc/nixos/hardware-configuration.nix
 
-# Configuration setup
-tee /mnt/etc/nixos/configuration.nix > /dev/null << EOF
-{ config, lib, pkgs, ... }:
-let
-  # Name of the configuration in the flake (nixosConfigurations.<name>), used by 'update'
-  nixProfileName = "$nixProfile";
-  username = "$username";
-  diskName = "$diskName";
-  limine = pkgs.limine.override { targets = [ "i686" "x86_64" ]; };
-in
-EOF
-
-tee -a /mnt/etc/nixos/configuration.nix << 'EOF' >/dev/null
-{
-  imports =
-    [ # Include the results of the hardware scan.
-      ./hardware-configuration.nix
-    ];
-
-  boot = {
-    loader.limine = {
-      enable = true;
-	    biosSupport = true;
-      biosDevice = "/dev/${diskName}";
-      efiSupport = true;
-      #
-      package = limine;
-      additionalFiles = {
-        "EFI/BOOT/BOOTIA32.EFI" = "${limine}/share/limine/BOOTIA32.EFI";
-      };
-    };
-
-    kernelPackages = pkgs.
-      linuxPackages_latest
-    ;
-
-    # Clean on reboot
-		tmp.cleanOnBoot = true;
-  };
-
-  # EXO Wings: firmware for the Realtek Wi-Fi (RTL8723BS/BE) and Bluetooth. Without it there may be
-  # no network for 'connect-repo' (nixos-ferchu enables it too, but only after the first update).
-  hardware.enableRedistributableFirmware = true;
-
-  nix.settings = {
-        experimental-features = [ "nix-command" "flakes" ];
-        max-jobs = 1; # EXO: 2 GB of RAM, one build at a time (the first update compiles Limine, labwc and wvkbd)
-        substituters = [
-            "https://cache.nixos.org"
-            #"https://nix-community.cachix.org"  # si usas paquetes community
-        ];
-    };
-
-  networking.hostName = "nixos"; # Define your hostname.
-  networking.networkmanager.enable = true;
-  time.timeZone = "America/Argentina/Buenos_Aires";
-
-   users.users.${username} = {
-     isNormalUser = true;
-     extraGroups = [ "wheel" ]; # Enable "sudo" for the user.
-     packages = with pkgs; [
-       tree
-     ];
-   };
-
-   security = {
-    sudo = {
-      enable = true;
-      extraRules = [
-        {
-          users = [ username ];
-          commands = [
-            {
-              command = "ALL";
-              options = [ "NOPASSWD" ];
-            }
-          ];
-        }
-      ];
-    };
-  };
-
-  environment.systemPackages = with pkgs; [
-    git
-    vim
-
-    # Custom shell script for managing GitHub deploy keys and updating from a repo.
-    # You can delete this script.
-    (writeShellScriptBin "createKeys" ''
-        echo -e "Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/github_deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new" | sudo tee /root/.ssh/config > /dev/null
-
-        sudo ssh-keygen -t ed25519 -f /root/.ssh/github_deploy_key -N "" > /dev/null
-
-        echo "Pega esta llave que esta a continuación en tu repositorio de GitHub como deploy key:"
-        echo ""
-          sudo cat /root/.ssh/github_deploy_key.pub
-        echo ""
-
-        echo "Después de crear la nueva deploy key, por favor pega la URL SSH de tu repositorio aquí:"
-          read repoUrl
-
-        repoParsed=$(tr ':' '/' <<< "$repoUrl")
-        echo "$repoParsed" | sudo tee /root/.github_repo_url > /dev/null
-
-        echo ""
-        echo "Repositorio se guardó correctamente: $repoParsed"
-        echo ""
-        echo "Ejecutando actualización..."
-        echo ""
-
-        # Reboot only if the update succeeded; otherwise keep the current system and show the error.
-        if update; then
-          echo "Actualización completada."
-          echo "Reiniciando sistema..."
-
-          sleep 5
-          sudo reboot
-          exit 0
-        else
-          echo "La actualización falló: no se reinicia el sistema."
-          echo "Revisá el error y volvé a intentar con: update && sudo reboot"
-          exit 1
-        fi
-    '')
-
-    # custom shell script for updating from the GitHub repo
-    # You can delete this script.
-    (writeShellScriptBin "update" ''
-      repo_file="/root/.github_repo_url"
-      repo_url=$(sudo cat "$repo_file" | xargs) # xargs trima whitespace/newlines
-      nixProfileVar="${nixProfileName}" # Nix interpolation: value comes from the 'let' at the top
-      
-      echo "Poner nombre de la rama del repositorio."
-      echo "Si esta vacio, por defecto se usará la principal del repo."
-      read -rp "Nombre de la rama: " rama < /dev/tty
-      echo ""
-      
-      echo ""
-      echo "Actualizando con repo: $repo_url"
-      echo ""
-      echo "Perfil de Nix: $nixProfileVar"
-      echo ""
-
-      # Pin a branch only if one was given; otherwise Nix uses the default branch of the repo.
-      # In a flake URL the query (?ref=) must go before the fragment (#profile).
-      if [ -n "$rama" ]; then
-        repo="git+ssh://$repo_url?ref=$rama#$nixProfileVar"
-      else
-        repo="git+ssh://$repo_url#$nixProfileVar"
-      fi
-
-      sudo nixos-generate-config
-      # DISK: install disk as a plain string (e.g. sda). The flake reads it with builtins.getEnv "DISK" (needs --impure)
-      sudo DISK=${diskName} nixos-rebuild boot --flake "$repo" \
-        --refresh --impure --no-write-lock-file \
-        -I hardware=/etc/nixos/hardware-configuration.nix
-    '')
-  ];
-
-  environment = {
-    shellAliases = {
-      # Alias for connecting to the GitHub repository
-      connect-repo = "createKeys";
-    };
-  };
-
-  services = {
-    openssh = {
-        enable = true;
-        settings = {
-            PermitRootLogin = "no";
-            PasswordAuthentication = true;
-            AllowGroups = [
-                "wheel"
-            ];   
-        };
-    };
-  };
-
-
-  networking.firewall.enable = false;
-  system.stateVersion = "26.05"; # Same as nixos-ferchu: do not change
+# The flake to install: git+ssh://git@github.com/user/repo.git[?ref=branch]#profile (the query goes before the '#')
+flake_ref() {
+  local ref="git+ssh://$repoPath"
+  [ -n "$branch" ] && ref="$ref?ref=$branch"
+  echo "$ref#$nixProfile"
 }
-EOF
 
 echo ""
-echo "Now installing NixOS..."
+echo "Now installing NixOS from $(flake_ref)..."
 echo ""
-# Installation of NixOS and setting 'root' password
-# nixos-install only asks for the root password on a terminal ([ -t 0 ]), so it is set with chpasswd
-nixos-install --no-root-passwd || fail "nixos-install failed. Read the error above, fix it and run nixos-install again."
+# Install straight from the flake: the first generation is already the system of the repo, with nothing in between
+# to clean up later.
+# - XDG_CACHE_HOME: the Nix caches (the clone of the repo, the nixpkgs sources) go to the new disk instead of RAM
+#   (this live system runs from RAM and the EXO has 2 GB). Deleted after the installation.
+# - DISK: the install disk as a plain name (e.g. mmcblk1), read by the flake with builtins.getEnv "DISK" (needs --impure).
+# - --no-channel-copy: do not copy the nixpkgs of the ISO to the new system. --max-jobs 1: one build at a time.
+# - --no-root-passwd: nixos-install only asks for it on a terminal, so it is set below with chpasswd.
+# If it fails (a wrong profile name, the network), it can be retried here without partitioning again.
+until XDG_CACHE_HOME=/mnt/.install-cache DISK="$diskName" nixos-install --flake "$(flake_ref)" --impure \
+    -I hardware=/mnt/etc/nixos/hardware-configuration.nix \
+    --no-channel-copy --no-root-passwd --max-jobs 1 < /dev/null; do
+  echo ""
+  echo "nixos-install failed with $(flake_ref): read the error above."
+  read -rp "Press Enter to try again, type another Nix profile name to try with it, or type STOP to quit: " answer < /dev/tty
+  [ "$answer" = "STOP" ] && fail "nixos-install failed: NixOS was not installed (the disk is already partitioned and mounted on /mnt)."
+  [ -n "$answer" ] && nixProfile="$answer"
+done
+rm -rf /mnt/.install-cache
+
+# Setting 'root' password. The other users and their passwords come from the flake (mutable users).
 echo "root:$passwordRoot" | chpasswd -R /mnt || fail "Could not set the root password (fix it with: nixos-enter --root /mnt, then passwd)."
 
-# Setting the new user
-echo "$username:$password" | chpasswd -R /mnt || fail "Could not set the password for $username (fix it with: nixos-enter --root /mnt, then passwd $username)."
+# Hand the repository over to the new system, so 'update' can rebuild from it: the deploy key, the SSH config for
+# github.com (and its host key, already accepted) and the repository URL
+mkdir -p /mnt/root/.ssh
+chmod 700 /mnt/root /mnt/root/.ssh
+cp -p /root/.ssh/config /root/.ssh/github_deploy_key /root/.ssh/github_deploy_key.pub /mnt/root/.ssh/ || fail "Could not copy the deploy key to the new system."
+[ -f /root/.ssh/known_hosts ] && cp -p /root/.ssh/known_hosts /mnt/root/.ssh/
+echo "$repoPath" > /mnt/root/.github_repo_url
+
+# Delete from the new system what the installation left and nothing uses (sources, compilers and other build
+# dependencies of what was compiled here). The installed generation stays: the system profile keeps it.
+echo ""
+echo "Removing what the installation left and the new system does not use..."
+nixos-enter --root /mnt -c 'nix-collect-garbage' < /dev/null || echo "WARNING: could not clean the Nix store of the new system. It works anyway: run 'sudo nix-collect-garbage' after booting."
 echo ""
 
 # Final messages

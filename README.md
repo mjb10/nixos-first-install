@@ -70,3 +70,29 @@ Las PCs no corren Headscale: se suman como clientes a la tailnet del VPS (paso 5
 connect-tailnet
 ```
 Te pide la URL de Headscale y la clave que mostró `tailnet-key` (la clave no se ve mientras la escribís). Si falla, generá otra clave con `tailnet-key`: cada una sirve una sola vez y vence en 1 hora.
+
+<br>
+
+<div align="center">
+    <h3> EXO Wings K1322 (instala directamente desde tu repo) </h3>
+</div>
+
+```bash
+curl -sSL https://raw.githubusercontent.com/mjb10/nixos-first-install/refs/heads/main/install-gpt-exo.sh | bash
+```
+
+⚠️ Borra el disco que confirmes (en la EXO, la eMMC con Windows). Correlo solo desde el USB de instalación de NixOS, con red y con Secure Boot apagado. También se puede usar en PCs con UEFI.
+
+Este script no instala un sistema mínimo: instala directamente la configuración de tu repo (`nixos-install --flake`), así que después no hace falta `connect-repo`. Necesitás un repo con un `flake.nix` que defina todo el sistema: los usuarios (con sus contraseñas), SSH, Limine con `BOOTIA32.EFI` para la EXO y el comando `update`.
+
+**1.** Antes de tocar cualquier disco, el script:
+- pide la contraseña de root dos veces. Es la única que pone: los usuarios salen del flake;
+- pide el nombre del perfil de Nix, que tiene que coincidir con `nixosConfigurations.<nombre>` del flake (si lo dejás vacío, usa `nixos`);
+- muestra una deploy key: agregala en GitHub, en el repo del flake (*Settings → Deploy keys*; con permiso de lectura alcanza);
+- pide la URL SSH del repo (`git@github.com:usuario/repo.git`) y la rama (si la dejás vacía, usa la principal). Si no puede leer el repo con esa clave, vuelve a preguntar.
+
+**2.** Elige solo el disco (en la EXO, la eMMC), te muestra sus particiones y pide `YES`. Si hay otro disco, como la microSD de la ranura, te ofrece borrarlo también y dejarlo vacío en ext4 (etiqueta `microSD`) para guardar archivos; con Enter queda como está. No se monta solo: montala cuando la necesites con `mkdir -p ~/microSD && sudo mount LABEL=microSD ~/microSD`.
+
+**3.** Instala el sistema de tu repo. Si falla (por ejemplo, por un perfil mal escrito o un corte de red), podés reintentar sin volver a particionar. Al final copia la deploy key al sistema nuevo, para que `update` pueda seguir actualizando desde el repo, borra lo que la instalación dejó sin usar y apaga la máquina.
+
+**4.** Sacá el USB y encendé: arranca directamente con la configuración de tu repo.
