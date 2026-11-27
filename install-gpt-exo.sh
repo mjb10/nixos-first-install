@@ -307,6 +307,8 @@ files_disk() {
 
 # Stop using the disks (an earlier run leaves them mounted on /mnt, with the swap on) and erase them, so they are
 # empty (only free space) when they get partitioned. When continuing an earlier run, the install disk is not erased.
+installSwap=/mnt/.install-swap # temporary swap file for nixos-install (see below), active if an earlier run stopped
+swapoff "$installSwap" 2>/dev/null
 umount -R /mnt 2>/dev/null # free /mnt if an earlier run of this script left the new system mounted there
 for name in "${alsoErase[@]}" "$diskName"; do release_disk "$name"; done
 eraseDisks=("${alsoErase[@]}")
@@ -409,6 +411,26 @@ flake_ref() {
   echo "$ref#$nixProfile"
 }
 
+# Memory for the installation (P14). Evaluating the flake takes more than the 2 GB of RAM of the EXO, and the programs
+# of this live system (systemd included) are read from the installer USB (squashfs). Under memory pressure the kernel
+# drops their pages and reads them again from the USB, over and over; once those reads failed, systemd crashed and
+# the kernel panicked. So, for the rest of this live session:
+# - a temporary swap file on the new root, besides the swap partition, so the Nix evaluator has room. It is created
+#   after the hardware configuration (which ignores swap files anyway) and deleted after the installation;
+# - vm.swappiness=150: above 100 tells the kernel that swapping (to the eMMC) costs less than reading files again
+#   (from the USB), so it swaps the memory of the evaluator out instead of dropping the programs of the live system;
+# - vm.min_free_kbytes=65536: 64 MiB always free for the USB and disk drivers, which cannot wait for memory.
+if ! swapon --show=NAME --noheadings | grep -qx "$installSwap"; then
+  rm -f "$installSwap"
+  if fallocate -l 4GiB "$installSwap" && chmod 600 "$installSwap" && mkswap "$installSwap" > /dev/null && swapon "$installSwap"; then
+    echo "Temporary swap file for the installation: $installSwap (4 GiB, deleted at the end)."
+  else
+    rm -f "$installSwap"
+    echo "WARNING: could not create the temporary swap file: the installation goes on with the swap partition only."
+  fi
+fi
+sysctl -q -w vm.swappiness=150 vm.min_free_kbytes=65536 || echo "WARNING: could not change the memory settings of the kernel."
+
 echo ""
 echo "Now installing NixOS from $(flake_ref)..."
 echo ""
@@ -447,6 +469,9 @@ echo "$repoPath" > /mnt/root/.github_repo_url
 echo ""
 echo "Removing what the installation left and the new system does not use..."
 nixos-enter --root /mnt -c 'nix-collect-garbage' < /dev/null || echo "WARNING: could not clean the Nix store of the new system. It works anyway: run 'sudo nix-collect-garbage' after booting."
+# The temporary swap file is not part of the new system
+swapoff "$installSwap" 2>/dev/null
+rm -f "$installSwap"
 echo ""
 
 # Final messages
