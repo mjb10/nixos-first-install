@@ -440,6 +440,22 @@ if [ "$(findmnt -no FSTYPE /iso 2>/dev/null)" != "tmpfs" ]; then
   echo "or 'SQUASHFS error', reboot the USB with 'Copy ISO Files to RAM' (kernel option copytoram) and run the script again."
 fi
 
+# Low power for the installation (P15). Downloading, unpacking and building with the 4 cores at full speed draws more
+# than the battery of the EXO can give: the screen flickered and the machine turned off. So, until it powers off:
+# - only the first CPU core stays on (the others are turned off), without its burst frequency;
+# - the screen backlight at 5% (the installation can be followed by SSH too);
+# - one download and one build at a time, on one core (the options of nixos-install below).
+# It is slower, but the power draw stays low.
+for cpu in /sys/devices/system/cpu/cpu[1-9]*/online; do
+  { [ -w "$cpu" ] && echo 0 > "$cpu"; } 2>/dev/null
+done
+{ [ -w /sys/devices/system/cpu/intel_pstate/no_turbo ] && echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo; } 2>/dev/null
+{ [ -w /sys/devices/system/cpu/cpufreq/boost ] && echo 0 > /sys/devices/system/cpu/cpufreq/boost; } 2>/dev/null
+for light in /sys/class/backlight/*; do
+  { [ -w "$light/brightness" ] && echo $(( $(cat "$light/max_brightness") / 20 + 1 )) > "$light/brightness"; } 2>/dev/null
+done
+echo "Low power mode for the installation: $(nproc) CPU core(s) on, screen dimmed. It takes longer."
+
 echo ""
 echo "Now installing NixOS from $(flake_ref)..."
 echo ""
@@ -449,11 +465,12 @@ echo ""
 #   (this live system runs from RAM and the EXO has 2 GB). Deleted after the installation.
 # - DISK: the install disk as a plain name (e.g. mmcblk1), read by the flake with builtins.getEnv "DISK" (needs --impure).
 # - --no-channel-copy: do not copy the nixpkgs of the ISO to the new system. --max-jobs 1: one build at a time.
+# - --cores 1 and max-substitution-jobs 1: each build on one core and one download at a time (low power, P15).
 # - --no-root-passwd: nixos-install only asks for it on a terminal, so it is set below with chpasswd.
 # If it fails (a wrong profile name, the network), it can be retried here without partitioning again.
 until XDG_CACHE_HOME=/mnt/.install-cache DISK="$diskName" nixos-install --flake "$(flake_ref)" --impure \
     -I hardware=/mnt/etc/nixos/hardware-configuration.nix \
-    --no-channel-copy --no-root-passwd --max-jobs 1 < /dev/null; do
+    --no-channel-copy --no-root-passwd --max-jobs 1 --cores 1 --option max-substitution-jobs 1 < /dev/null; do
   echo ""
   echo "nixos-install failed with $(flake_ref): read the error above."
   read -rp "Press Enter to try again, type another Nix profile name to try with it, or type STOP to quit: " answer < /dev/tty
