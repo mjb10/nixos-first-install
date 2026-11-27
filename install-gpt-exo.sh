@@ -300,7 +300,7 @@ parted -s /dev/$diskName -- mkpart root ext4 1024MiB -2GB
 # Next, add a swap partition. The size required will vary according to needs, here a 2 GB one is created (the EXO has 2 GB of RAM; swap also helps nix evaluate the flake).
 parted -s /dev/$diskName -- mkpart swap linux-swap -2GB 100%
 
-# Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It uses the space reserved at the start of the disk (about 1 GB). On the EXO, the 32-bit UEFI firmware starts Limine from EFI/BOOT/BOOTIA32.EFI on this partition (D-64).
+# Finally, the boot partition. NixOS by default uses the ESP (EFI system partition) as its /boot partition. It takes the first half of the space reserved at the start of the disk (1MB to 512MB; the BIOS boot partition below takes 512MiB to 1024MiB). On the EXO, the 32-bit UEFI firmware starts Limine from EFI/BOOT/BOOTIA32.EFI on this partition (D-64).
 parted -s /dev/$diskName -- mkpart ESP fat32 1MB 512MB
 parted -s /dev/$diskName -- set 3 esp on
 
